@@ -29,21 +29,49 @@ interface RegisterStudentPageProps {
 }
 
 interface PoseTarget {
-  id: 'CENTER' | 'LEFT' | 'RIGHT' | 'UP' | 'DOWN';
+  id: 'CENTER' | 'RIGHT' | 'LEFT' | 'UP';
   label: string;
   instruction: string;
   tip: string;
   icon: string;
+  deg: number;
 }
 
+// 4 Sudut Perekaman: Depan, Kanan, Kiri, dan Atas (Tanpa Bawah)
 const POSE_TARGETS: PoseTarget[] = [
-  { id: 'CENTER', label: 'Tatap Lurus', instruction: 'Tatap lurus ke depan ke arah kamera ya', tip: 'Wajah sejajar dengan lingkaran', icon: '🎯' },
-  { id: 'LEFT', label: 'Tengok Kiri', instruction: 'Bagus! Sekarang tolehkan kepala ke kiri perlahan', tip: 'Putar sekitar 15 derajat', icon: '👈' },
-  { id: 'RIGHT', label: 'Tengok Kanan', instruction: 'Hebat! Sekarang tolehkan kepala ke kanan perlahan', tip: 'Putar sekitar 15 derajat', icon: '👉' },
-  { id: 'UP', label: 'Dongak Atas', instruction: 'Bagus! Sekarang dongakkan kepala sedikit ke atas', tip: 'Angkat dagu perlahan', icon: '👆' },
-  { id: 'DOWN', label: 'Tunduk Bawah', instruction: 'Terakhir, tundukkan kepala sedikit ke bawah ya', tip: 'Arahkan pandangan ke bawah', icon: '👇' },
+  {
+    id: 'CENTER',
+    label: 'Depan (Lurus)',
+    instruction: 'Tatap lurus ke depan ke arah kamera ya',
+    tip: 'Wajah sejajar dengan lingkaran kamera',
+    icon: '🎯',
+    deg: 90,
+  },
+  {
+    id: 'RIGHT',
+    label: 'Hadap Kanan',
+    instruction: 'Bagus! Sekarang tolehkan kepala ke kanan perlahan',
+    tip: 'Putar kepala ke kanan sekitar 15 derajat',
+    icon: '👉',
+    deg: 0,
+  },
+  {
+    id: 'LEFT',
+    label: 'Hadap Kiri',
+    instruction: 'Hebat! Sekarang tolehkan kepala ke kiri perlahan',
+    tip: 'Putar kepala ke kiri sekitar 15 derajat',
+    icon: '👈',
+    deg: 180,
+  },
+  {
+    id: 'UP',
+    label: 'Hadap Atas',
+    instruction: 'Bagus! Terakhir, dongakkan kepala sedikit ke atas ya',
+    tip: 'Angkat dagu sedikit ke atas',
+    icon: '👆',
+    deg: 270,
+  },
 ];
-
 
 export const RegisterStudentPage: React.FC<RegisterStudentPageProps> = ({ onSuccess, onCancel }) => {
   const [step, setStep] = useState<number>(1);
@@ -65,8 +93,8 @@ export const RegisterStudentPage: React.FC<RegisterStudentPageProps> = ({ onSucc
   >({});
   const [liveHeadPose, setLiveHeadPose] = useState<HeadPose | null>(null);
 
-  // Manual fallback photos
-  const [manualPhotos, setManualPhotos] = useState<(string | null)[]>([null, null, null, null, null]);
+  // Manual fallback photos (4 angles)
+  const [manualPhotos, setManualPhotos] = useState<(string | null)[]>([null, null, null, null]);
 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -147,7 +175,7 @@ export const RegisterStudentPage: React.FC<RegisterStudentPageProps> = ({ onSucc
   }, [step, startCamera, stopCamera]);
 
   // =========================================================================
-  // 3D FACE ID AUTOMATIC GUIDED SCANNING LOOP
+  // 3D FACE ID AUTOMATIC GUIDED SCANNING LOOP (4 ANGLES: FRONT, RIGHT, LEFT, UP)
   // =========================================================================
 
   const handleStart3dScan = () => {
@@ -155,7 +183,9 @@ export const RegisterStudentPage: React.FC<RegisterStudentPageProps> = ({ onSucc
     setScanProgress(0);
     setCurrentPromptIndex(0);
     setIsScanningActive(true);
-    audioFeedback.speakText(`Halo ${formData.nickname || 'Siswa'}, tatap lurus ke arah lingkaran kamera.`);
+    audioFeedback.speakText(
+      `Halo ${formData.nickname || 'Siswa'}, mari kita mulai pemindaian wajah. Tatap lurus ke arah lingkaran kamera ya.`
+    );
   };
 
   const handleResetScan = () => {
@@ -212,13 +242,11 @@ export const RegisterStudentPage: React.FC<RegisterStudentPageProps> = ({ onSucc
 
             if (currentTarget.id === 'CENTER' && headPose.poseCategory === 'CENTER') {
               isPoseMatched = true;
-            } else if (currentTarget.id === 'LEFT' && (headPose.poseCategory === 'LEFT' || headPose.yaw < -10)) {
-              isPoseMatched = true;
             } else if (currentTarget.id === 'RIGHT' && (headPose.poseCategory === 'RIGHT' || headPose.yaw > 10)) {
               isPoseMatched = true;
-            } else if (currentTarget.id === 'UP' && (headPose.poseCategory === 'UP' || headPose.pitch > 8)) {
+            } else if (currentTarget.id === 'LEFT' && (headPose.poseCategory === 'LEFT' || headPose.yaw < -10)) {
               isPoseMatched = true;
-            } else if (currentTarget.id === 'DOWN' && (headPose.poseCategory === 'DOWN' || headPose.pitch < -8)) {
+            } else if (currentTarget.id === 'UP' && (headPose.poseCategory === 'UP' || headPose.pitch > 8)) {
               isPoseMatched = true;
             }
 
@@ -255,11 +283,11 @@ export const RegisterStudentPage: React.FC<RegisterStudentPageProps> = ({ onSucc
                 const nextTarget = POSE_TARGETS[nextIdx];
                 audioFeedback.speakText(nextTarget.instruction);
               } else {
-                // All 5 3D poses captured!
+                // All 4 3D poses captured!
                 setIsScanningActive(false);
                 confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
                 audioFeedback.speakText(
-                  `Hebat! Pemindaian 3D selesai. Data wajah ${formData.nickname || 'siswa'} siap didaftarkan.`
+                  `Hebat sekali! Pemindaian wajah telah selesai. Data wajah ${formData.nickname || 'siswa'} siap didaftarkan.`
                 );
                 // Auto proceed to review after 1 second
                 setTimeout(() => setStep(3), 1200);
@@ -387,7 +415,7 @@ export const RegisterStudentPage: React.FC<RegisterStudentPageProps> = ({ onSucc
             </span>
           </h2>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Daftarkan profil siswa berkebutuhan khusus dengan pemindaian biometrik wajah 3D instan
+            Daftarkan profil siswa dengan pemindaian biometrik 4 sudut (Depan, Kanan, Kiri, Atas)
           </p>
         </div>
 
@@ -557,7 +585,7 @@ export const RegisterStudentPage: React.FC<RegisterStudentPageProps> = ({ onSucc
       )}
 
       {/* ========================================================================= */}
-      {/* STEP 2: APPLE FACE ID / 3D HEAD ROTATION GUIDED SCANNER */}
+      {/* STEP 2: APPLE FACE ID / 3D HEAD ROTATION GUIDED SCANNER (4 ANGLES) */}
       {/* ========================================================================= */}
       {step === 2 && (
         <div className="p-6 rounded-3xl glass-panel border border-slate-800 space-y-6 animate-fadeIn">
@@ -566,10 +594,10 @@ export const RegisterStudentPage: React.FC<RegisterStudentPageProps> = ({ onSucc
             <div>
               <h3 className="text-lg font-black text-white flex items-center gap-2">
                 <Scan className="w-5 h-5 text-emerald-400" />
-                <span>Pemindaian Wajah 3D (Face ID Guided Scanner)</span>
+                <span>Pemindaian Wajah 3D (4 Sudut: Depan, Kanan, Kiri, Atas)</span>
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
-                Cukup klik <b>Mulai Pemindaian</b> lalu minta siswa menoleh perlahan sesuai panduan lingkaran
+                Cukup klik <b>Mulai Pemindaian</b> lalu minta siswa menoleh sesuai panduan lingkaran
               </p>
             </div>
 
@@ -600,18 +628,16 @@ export const RegisterStudentPage: React.FC<RegisterStudentPageProps> = ({ onSucc
                   }`}
                 />
 
-                {/* Segmented 5-Angle Indicator Ring */}
+                {/* Segmented 4-Angle Indicator Ring (Depan, Kanan, Kiri, Atas) */}
                 <div className="absolute inset-[-12px] pointer-events-none">
                   {POSE_TARGETS.map((t, idx) => {
                     const isDone = Boolean(capturedSamples[t.id]);
                     const isCurrent = isScanningActive && currentPromptIndex === idx;
-                    const angles = [270, 180, 0, 90, 315]; // Top, Left, Right, Bottom...
-                    const deg = angles[idx] || idx * 72;
                     return (
                       <div
                         key={t.id}
                         style={{
-                          transform: `rotate(${deg}deg) translate(150px) rotate(-${deg}deg)`,
+                          transform: `rotate(${t.deg}deg) translate(150px) rotate(-${t.deg}deg)`,
                         }}
                         className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold transition-all duration-300 shadow-lg ${
                           isDone
@@ -685,7 +711,7 @@ export const RegisterStudentPage: React.FC<RegisterStudentPageProps> = ({ onSucc
               <div className="w-full max-w-md text-center space-y-3">
                 <div className="flex items-center justify-between text-xs font-bold">
                   <span className="text-slate-400">Kemajuan Pemindaian 3D:</span>
-                  <span className="text-emerald-400">{scanProgress}% Selesai ({Object.keys(capturedSamples).length}/5 Sudut)</span>
+                  <span className="text-emerald-400">{scanProgress}% Selesai ({Object.keys(capturedSamples).length}/4 Sudut)</span>
                 </div>
 
                 {/* Progress Bar */}
@@ -702,7 +728,7 @@ export const RegisterStudentPage: React.FC<RegisterStudentPageProps> = ({ onSucc
                     {isScanningActive && currentTarget
                       ? currentTarget.instruction
                       : scanProgress === 100
-                      ? '✅ Semua sudut wajah 3D berhasil direkam!'
+                      ? '✅ Keempat sudut wajah 3D berhasil direkam!'
                       : 'Klik tombol Mulai Pemindaian di bawah untuk memulai perekaman 3D'}
                   </div>
                   <div className="text-[11px] text-emerald-400 font-medium mt-0.5">
@@ -747,7 +773,7 @@ export const RegisterStudentPage: React.FC<RegisterStudentPageProps> = ({ onSucc
                 />
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {POSE_TARGETS.map((t, idx) => (
                   <div key={t.id} className="p-3 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col items-center gap-2">
                     <div className="w-20 h-20 rounded-xl overflow-hidden bg-slate-800 flex items-center justify-center border border-slate-700">
@@ -828,7 +854,7 @@ export const RegisterStudentPage: React.FC<RegisterStudentPageProps> = ({ onSucc
               <CheckCircle2 className="w-6 h-6" />
             </div>
             <h3 className="text-xl font-black text-white">Konfirmasi Data Siswa & Sampel Wajah 3D</h3>
-            <p className="text-xs text-slate-400">Pastikan biodata dan foto biometrik wajah siswa sudah sesuai</p>
+            <p className="text-xs text-slate-400">Pastikan biodata dan 4 sampel biometrik wajah sudah sesuai</p>
           </div>
 
           {/* Student Info Card */}
@@ -853,13 +879,13 @@ export const RegisterStudentPage: React.FC<RegisterStudentPageProps> = ({ onSucc
             </div>
           </div>
 
-          {/* Captured 3D Angle Thumbnails */}
+          {/* Captured 3D Angle Thumbnails (4 Angles) */}
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
-              Sampel Biometrik Wajah 3D yang Direkam:
+              Sampel Biometrik Wajah yang Direkam (4 Sudut):
             </label>
 
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {isFaceIdMode
                 ? POSE_TARGETS.map(t => {
                     const sample = capturedSamples[t.id];
