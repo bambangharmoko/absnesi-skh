@@ -1,0 +1,14 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/backend/python/python.exe",
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}",
+    "${workspaceFolder}/backend",
+    "${workspaceFolder}/backend/python/Lib/site-packages"
+  ],
+  "python.autoComplete.extraPaths": [
+    "${workspaceFolder}",
+    "${workspaceFolder}/backend",
+    "${workspaceFolder}/backend/python/Lib/site-packages"
+  ],
+  "typescript.tsdk": "frontend/node_modules/typescript/lib"
+}
