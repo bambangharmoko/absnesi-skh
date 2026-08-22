@@ -307,6 +307,9 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
             confidence: res.confidence,
             snapshot: base64Image,
           });
+
+          // Speak polite Indonesian recognition prompt
+          audioFeedback.speakText(`Halo ${res.student.nickname || res.student.name}, wajah kamu berhasil dikenali.`);
         } else if (res.status === 'UNKNOWN') {
           setHudStatus('UNKNOWN');
           setHudLabel('Wajah terdeteksi (Tidak Dikenali)');
@@ -352,6 +355,11 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
         chosenMode
       );
 
+      const isCheckIn = chosenMode === 'IN' || (chosenMode === 'AUTO' && attResult.action === 'CHECK_IN');
+      const speechMessage = isCheckIn
+        ? `Halo ${student.nickname}, presensi masuk kamu berhasil dicatat! Selamat belajar ya!`
+        : `Halo ${student.nickname}, presensi pulang kamu berhasil dicatat! Hati-hati di jalan ya!`;
+
       const responseObj: VerifyFrameResponse = {
         status: 'MATCHED',
         student: pendingMatch.student,
@@ -365,7 +373,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
       };
 
       audioFeedback.playCelebrationChime();
-      audioFeedback.speakText(responseObj.message);
+      audioFeedback.speakText(speechMessage);
       onVerified(responseObj);
 
       setPendingMatch(null);
@@ -375,6 +383,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
       setIsSubmittingAttendance(false);
     }
   };
+
 
   const handleCancelPendingMatch = () => {
     setPendingMatch(null);

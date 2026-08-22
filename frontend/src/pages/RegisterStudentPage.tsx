@@ -37,12 +37,13 @@ interface PoseTarget {
 }
 
 const POSE_TARGETS: PoseTarget[] = [
-  { id: 'CENTER', label: 'Tatap Lurus', instruction: 'Tatap lurus ke depan ke arah kamera', tip: 'Wajah sejajar dengan lingkaran', icon: '🎯' },
-  { id: 'LEFT', label: 'Tengok Kiri', instruction: 'Putar kepala perlahan ke sisi kiri', tip: 'Putar sekitar 15 derajat', icon: '👈' },
-  { id: 'RIGHT', label: 'Tengok Kanan', instruction: 'Putar kepala perlahan ke sisi kanan', tip: 'Putar sekitar 15 derajat', icon: '👉' },
-  { id: 'UP', label: 'Dongak Atas', instruction: 'Dongakkan kepala sedikit ke atas', tip: 'Angkat dagu perlahan', icon: '👆' },
-  { id: 'DOWN', label: 'Tunduk Bawah', instruction: 'Tundukkan kepala sedikit ke bawah', tip: 'Arahkan pandangan ke bawah', icon: '👇' },
+  { id: 'CENTER', label: 'Tatap Lurus', instruction: 'Tatap lurus ke depan ke arah kamera ya', tip: 'Wajah sejajar dengan lingkaran', icon: '🎯' },
+  { id: 'LEFT', label: 'Tengok Kiri', instruction: 'Bagus! Sekarang tolehkan kepala ke kiri perlahan', tip: 'Putar sekitar 15 derajat', icon: '👈' },
+  { id: 'RIGHT', label: 'Tengok Kanan', instruction: 'Hebat! Sekarang tolehkan kepala ke kanan perlahan', tip: 'Putar sekitar 15 derajat', icon: '👉' },
+  { id: 'UP', label: 'Dongak Atas', instruction: 'Bagus! Sekarang dongakkan kepala sedikit ke atas', tip: 'Angkat dagu perlahan', icon: '👆' },
+  { id: 'DOWN', label: 'Tunduk Bawah', instruction: 'Terakhir, tundukkan kepala sedikit ke bawah ya', tip: 'Arahkan pandangan ke bawah', icon: '👇' },
 ];
+
 
 export const RegisterStudentPage: React.FC<RegisterStudentPageProps> = ({ onSuccess, onCancel }) => {
   const [step, setStep] = useState<number>(1);

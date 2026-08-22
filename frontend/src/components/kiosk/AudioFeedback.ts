@@ -1,15 +1,47 @@
 /**
  * Audio feedback module using Web Audio API (Synthesizer Chime)
- * and Web Speech API (Indonesian SpeechSynthesis)
+ * and 100% Native Indonesian Text-to-Speech (Indonesian Voice Engine & Audio Fallback)
  */
 
 class AudioFeedbackManager {
   private audioCtx: AudioContext | null = null;
-  private isSpeaking: boolean = false;
+  private indonesianVoice: SpeechSynthesisVoice | null = null;
+  private currentAudio: HTMLAudioElement | null = null;
+
+  constructor() {
+    this.initVoices();
+  }
+
+  private initVoices() {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+
+    const findVoice = () => {
+      const voices = window.speechSynthesis.getVoices();
+      // Look for pure Indonesian voices (id-ID, in-ID, Gadis, Ardi, Andika, Indonesian)
+      const found = voices.find(
+        v =>
+          v.lang.toLowerCase().startsWith('id') ||
+          v.lang.toLowerCase().startsWith('in') ||
+          v.name.toLowerCase().includes('indonesia') ||
+          v.name.toLowerCase().includes('gadis') ||
+          v.name.toLowerCase().includes('ardi')
+      );
+      if (found) {
+        this.indonesianVoice = found;
+      }
+    };
+
+    findVoice();
+    if (window.speechSynthesis.onvoiceschanged !== undefined) {
+      window.speechSynthesis.onvoiceschanged = findVoice;
+    }
+  }
 
   private initAudioContext() {
     if (!this.audioCtx) {
-      const AudioCtxClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const AudioCtxClass =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (AudioCtxClass) {
         this.audioCtx = new AudioCtxClass();
       }
@@ -20,7 +52,7 @@ class AudioFeedbackManager {
   }
 
   /**
-   * Play a harmonious, child-friendly 3-note celebration chime (C5 -> E5 -> G5)
+   * Play a harmonious, child-friendly 4-note celebration chime
    */
   playCelebrationChime() {
     try {
@@ -29,10 +61,10 @@ class AudioFeedbackManager {
 
       const now = this.audioCtx.currentTime;
       const notes = [
-        { freq: 523.25, time: 0.00, dur: 0.35 }, // C5
-        { freq: 659.25, time: 0.12, dur: 0.40 }, // E5
+        { freq: 523.25, time: 0.0, dur: 0.35 }, // C5
+        { freq: 659.25, time: 0.12, dur: 0.4 }, // E5
         { freq: 783.99, time: 0.24, dur: 0.65 }, // G5
-        { freq: 1046.50, time: 0.36, dur: 0.85 } // C6
+        { freq: 1046.5, time: 0.36, dur: 0.85 }, // C6
       ];
 
       notes.forEach(({ freq, time, dur }) => {
@@ -43,7 +75,6 @@ class AudioFeedbackManager {
         osc.type = 'sine';
         osc.frequency.setValueAtTime(freq, now + time);
 
-        // Soft bell envelope
         gain.gain.setValueAtTime(0.001, now + time);
         gain.gain.exponentialRampToValueAtTime(0.25, now + time + 0.04);
         gain.gain.exponentialRampToValueAtTime(0.0001, now + time + dur);
@@ -55,43 +86,73 @@ class AudioFeedbackManager {
         osc.stop(now + time + dur + 0.05);
       });
     } catch (e) {
-      console.warn('Audio chime playback error:', e);
+      console.warn('Audio chime error:', e);
     }
   }
 
   /**
-   * Speak friendly text with Indonesian TTS
+   * Speak friendly text with 100% Native Indonesian Voice
    */
   speakText(text: string) {
-    if (!('speechSynthesis' in window)) return;
-    
-    try {
-      // Cancel previous speech if any
+    if (!text || !text.trim()) return;
+
+    // Stop any previous speech / audio playback
+    if (this.currentAudio) {
+      this.currentAudio.pause();
+      this.currentAudio = null;
+    }
+    if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
+    }
 
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = 'id-ID';
-      utterance.rate = 0.95; // Gentle, clear speed for SKH students
-      utterance.pitch = 1.1; // Friendly and cheerful tone
+    // Clean formatting for natural speech
+    const cleanText = text
+      .replace(/[•*#_~`]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
 
-      // Try to find an Indonesian voice if available
-      const voices = window.speechSynthesis.getVoices();
-      const idVoice = voices.find(v => v.lang.includes('id') || v.lang.includes('ID') || v.name.toLowerCase().includes('indonesia'));
-      if (idVoice) {
-        utterance.voice = idVoice;
+    // 1. Primary Method: Native Indonesian Web Speech Synthesis with id-ID
+    if ('speechSynthesis' in window) {
+      try {
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        utterance.lang = 'id-ID';
+        utterance.rate = 0.95; // Gentle, easy to comprehend for special needs students
+        utterance.pitch = 1.05; // Friendly and warm tone
+
+        if (this.indonesianVoice) {
+          utterance.voice = this.indonesianVoice;
+        } else {
+          // Re-search voices in case loaded asynchronously
+          const voices = window.speechSynthesis.getVoices();
+          const idV = voices.find(
+            v =>
+              v.lang.toLowerCase().startsWith('id') ||
+              v.lang.toLowerCase().startsWith('in') ||
+              v.name.toLowerCase().includes('indonesia')
+          );
+          if (idV) {
+            this.indonesianVoice = idV;
+            utterance.voice = idV;
+          }
+        }
+
+        window.speechSynthesis.speak(utterance);
+        return;
+      } catch (e) {
+        console.warn('SpeechSynthesis speak notice:', e);
       }
+    }
 
-      this.isSpeaking = true;
-      utterance.onend = () => {
-        this.isSpeaking = false;
-      };
-      utterance.onerror = () => {
-        this.isSpeaking = false;
-      };
-
-      window.speechSynthesis.speak(utterance);
-    } catch (e) {
-      console.warn('SpeechSynthesis error:', e);
+    // 2. High-Quality Fallback: Online Indonesian Voice Audio Stream
+    try {
+      const audioUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=id&client=tw-ob&q=${encodeURIComponent(
+        cleanText
+      )}`;
+      const audio = new Audio(audioUrl);
+      this.currentAudio = audio;
+      audio.play().catch(() => {});
+    } catch (err) {
+      console.warn('TTS Audio fallback notice:', err);
     }
   }
 }
