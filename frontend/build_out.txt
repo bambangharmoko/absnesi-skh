@@ -1,0 +1,51 @@
+[36mvite v8.2.2 [32mbuilding client environment for production...[36m[39m
+transforming...
+[31m✗[39m Build failed in 456ms
+
+PWA v1.3.0
+mode      generateSW
+precache  1 entries (0.00 KiB)
+files generated
+  dist/sw.js
+  dist/workbox-9c191d2f.js
+warnings
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "C:\\beng\\Absensi-SKH\\frontend\\dist",
+  "globPattern": "**/*.{js,css,html,ico,png,svg}",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "workbox-*.js"
+  ]
+}
+
+[31merror during build:
+[31mBuild failed with 1 error:
+
+[plugin vite-plugin-pwa:build]
+Error: Build failed with 1 error:
+
+[plugin vite:css] C:/beng/Absensi-SKH/frontend/src/index.css:undefined:NaN
+Error: [postcss] It looks like you're trying to use `tailwindcss` directly as a PostCSS plugin. The PostCSS plugin has moved to a separate package, so to continue using Tailwind CSS with PostCSS you'll need to install `@tailwindcss/postcss` and update your PostCSS configuration.
+    at mt (C:\beng\Absensi-SKH\frontend\node_modules\tailwindcss\dist\lib.js:38:1643)
+    at LazyResult.runOnRoot (C:\beng\Absensi-SKH\frontend\node_modules\postcss\lib\lazy-result.js:367:16)
+    at LazyResult.runAsync (C:\beng\Absensi-SKH\frontend\node_modules\postcss\lib\lazy-result.js:296:26)
+    at async runPostCSS (file:///C:/beng/Absensi-SKH/frontend/node_modules/vite/dist/node/chunks/node.js:23223:19)
+    at async compilePostCSS (file:///C:/beng/Absensi-SKH/frontend/node_modules/vite/dist/node/chunks/node.js:23207:6)
+    at async compileCSS (file:///C:/beng/Absensi-SKH/frontend/node_modules/vite/dist/node/chunks/node.js:23137:26)
+    at async TransformPluginContextImpl.handler (file:///C:/beng/Absensi-SKH/frontend/node_modules/vite/dist/node/chunks/node.js:22612:47)
+    at async plugin (file:///C:/beng/Absensi-SKH/frontend/node_modules/rolldown/dist/shared/bindingify-input-options-COG1sboO.mjs:1537:16)
+    at async plugin.<computed> (file:///C:/beng/Absensi-SKH/frontend/node_modules/rolldown/dist/shared/bindingify-input-options-COG1sboO.mjs:2125:12)
+    at aggregateBindingErrorsIntoJsError (file:///C:/beng/Absensi-SKH/frontend/node_modules/rolldown/dist/shared/error-NcRuXAVN.mjs:48:18)
+    at plugin (file:///C:/beng/Absensi-SKH/frontend/node_modules/rolldown/dist/shared/bindingify-input-options-COG1sboO.mjs:1449:60)
+    at file:///C:/beng/Absensi-SKH/frontend/node_modules/rolldown/dist/shared/bindingify-input-options-COG1sboO.mjs:1928:21
+    at plugin.<computed> (file:///C:/beng/Absensi-SKH/frontend/node_modules/rolldown/dist/shared/bindingify-input-options-COG1sboO.mjs:2125:18)[31m
+    at aggregateBindingErrorsIntoJsError (file:///C:/beng/Absensi-SKH/frontend/node_modules/rolldown/dist/shared/error-NcRuXAVN.mjs:48:18)
+    at unwrapBindingResult (file:///C:/beng/Absensi-SKH/frontend/node_modules/rolldown/dist/shared/error-NcRuXAVN.mjs:18:128)
+    at #build (file:///C:/beng/Absensi-SKH/frontend/node_modules/rolldown/dist/shared/rolldown-vcii7mEa.mjs:132:34)
+    at async buildEnvironment (file:///C:/beng/Absensi-SKH/frontend/node_modules/vite/dist/node/chunks/node.js:33821:66)
+    at async Object.build (file:///C:/beng/Absensi-SKH/frontend/node_modules/vite/dist/node/chunks/node.js:34242:19)
+    at async Object.buildApp (file:///C:/beng/Absensi-SKH/frontend/node_modules/vite/dist/node/chunks/node.js:34239:153)
+    at async CAC.<anonymous> (file:///C:/beng/Absensi-SKH/frontend/node_modules/vite/dist/node/cli.js:776:3) {
+  errors: [Getter/Setter]
+}[39m

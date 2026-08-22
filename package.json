@@ -1,0 +1,13 @@
+{
+  "name": "absensi-skh-root",
+  "version": "1.0.0",
+  "description": "Sistem Presensi Siswa Face Recognition SKH Santo Fransiskus Asisi",
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "backend": "backend\\python\\python.exe -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload"
+  },
+  "keywords": ["face-recognition", "pwa", "fastapi", "react"],
+  "author": "Antigravity AI",
+  "license": "MIT"
+}
