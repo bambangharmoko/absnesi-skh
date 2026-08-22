@@ -80,7 +80,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
 
   // Load enrolled students list
   const loadStudents = useCallback(() => {
-    api.getStudents().then(setEnrolledStudents).catch(() => {});
+    api.getStudents().then(setEnrolledStudents).catch(() => { });
   }, []);
 
   useEffect(() => {
@@ -108,13 +108,13 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
           try {
             track.stop();
             track.enabled = false;
-          } catch (e) {}
+          } catch (e) { }
         });
         videoRef.current.srcObject = null;
       }
       try {
         videoRef.current.pause();
-      } catch (e) {}
+      } catch (e) { }
     }
     setIsStreaming(false);
   }, []);
@@ -507,12 +507,11 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
           muted
           onCanPlay={() => setIsStreaming(true)}
           onLoadedMetadata={() => {
-            videoRef.current?.play().catch(() => {});
+            videoRef.current?.play().catch(() => { });
             setIsStreaming(true);
           }}
-          className={`absolute inset-0 w-full h-full object-cover transform scale-x-[-1] transition-opacity duration-300 ${
-            isStreaming ? 'opacity-100' : 'opacity-0'
-          }`}
+          className={`absolute inset-0 w-full h-full object-cover transform scale-x-[-1] transition-opacity duration-300 ${isStreaming ? 'opacity-100' : 'opacity-0'
+            }`}
         />
 
         {/* Dynamic HUD Canvas Overlay */}
@@ -570,8 +569,8 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                 hudStatus === 'MATCHED'
                   ? 'text-emerald-300'
                   : hudStatus === 'UNKNOWN'
-                  ? 'text-red-300'
-                  : 'text-yellow-300'
+                    ? 'text-red-300'
+                    : 'text-yellow-300'
               }
             >
               {hudLabel}
@@ -585,11 +584,10 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
               <button
                 onClick={() => setKioskMode('AUTO')}
                 title="Mode Otomatis (Masuk Pagi / Pulang Siang)"
-                className={`px-2.5 py-1 rounded-full text-xs font-bold flex items-center gap-1 transition ${
-                  kioskMode === 'AUTO'
+                className={`px-2.5 py-1 rounded-full text-xs font-bold flex items-center gap-1 transition ${kioskMode === 'AUTO'
                     ? 'bg-blue-600 text-white shadow-sm'
                     : 'text-slate-400 hover:text-slate-200'
-                }`}
+                  }`}
               >
                 <Zap className="w-3.5 h-3.5" />
                 <span>Otomatis</span>
@@ -598,11 +596,10 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
               <button
                 onClick={() => setKioskMode('IN')}
                 title="Mode Khusus Presensi Masuk"
-                className={`px-2.5 py-1 rounded-full text-xs font-bold flex items-center gap-1 transition ${
-                  kioskMode === 'IN'
+                className={`px-2.5 py-1 rounded-full text-xs font-bold flex items-center gap-1 transition ${kioskMode === 'IN'
                     ? 'bg-emerald-600 text-white shadow-sm'
                     : 'text-slate-400 hover:text-slate-200'
-                }`}
+                  }`}
               >
                 <Sun className="w-3.5 h-3.5" />
                 <span>Masuk</span>
@@ -611,11 +608,10 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
               <button
                 onClick={() => setKioskMode('OUT')}
                 title="Mode Khusus Presensi Pulang"
-                className={`px-2.5 py-1 rounded-full text-xs font-bold flex items-center gap-1 transition ${
-                  kioskMode === 'OUT'
+                className={`px-2.5 py-1 rounded-full text-xs font-bold flex items-center gap-1 transition ${kioskMode === 'OUT'
                     ? 'bg-amber-600 text-white shadow-sm'
                     : 'text-slate-400 hover:text-slate-200'
-                }`}
+                  }`}
               >
                 <Home className="w-3.5 h-3.5" />
                 <span>Pulang</span>
@@ -694,18 +690,17 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                   className="px-3.5 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold flex items-center justify-center gap-1.5 transition"
                 >
                   <RotateCcw className="w-4 h-4" />
-                  <span>Bukan Saya</span>
+                  <span>Refresh</span>
                 </button>
 
                 {/* Tombol Presensi Masuk */}
                 <button
                   onClick={() => handleConfirmAttendance('IN')}
                   disabled={isSubmittingAttendance || isAlreadyCheckedIn}
-                  className={`flex-1 py-3 rounded-2xl font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-lg transition transform active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed ${
-                    !isAlreadyCheckedIn
+                  className={`flex-1 py-3 rounded-2xl font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-lg transition transform active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed ${!isAlreadyCheckedIn
                       ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 shadow-emerald-500/30'
                       : 'bg-slate-800 text-slate-400'
-                  }`}
+                    }`}
                 >
                   <Sun className="w-4 h-4" />
                   <span>{isAlreadyCheckedIn ? 'Sudah Masuk' : 'KLIK MASUK (HADIR)'}</span>
@@ -715,11 +710,10 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                 <button
                   onClick={() => handleConfirmAttendance('OUT')}
                   disabled={isSubmittingAttendance || isAlreadyCheckedOut}
-                  className={`flex-1 py-3 rounded-2xl font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-lg transition transform active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed ${
-                    isAlreadyCheckedIn && !isAlreadyCheckedOut
+                  className={`flex-1 py-3 rounded-2xl font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-lg transition transform active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed ${isAlreadyCheckedIn && !isAlreadyCheckedOut
                       ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-amber-500/30'
                       : 'bg-slate-800 text-slate-400'
-                  }`}
+                    }`}
                 >
                   <Home className="w-4 h-4" />
                   <span>{isAlreadyCheckedOut ? 'Sudah Pulang' : 'KLIK PULANG'}</span>
@@ -778,11 +772,10 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => setManualModeChoice('IN')}
-                  className={`flex-1 p-3 rounded-2xl border text-xs font-bold flex items-center justify-center gap-2 transition ${
-                    manualModeChoice === 'IN'
+                  className={`flex-1 p-3 rounded-2xl border text-xs font-bold flex items-center justify-center gap-2 transition ${manualModeChoice === 'IN'
                       ? 'bg-emerald-950/70 border-emerald-500 text-emerald-300'
                       : 'bg-slate-950/50 border-slate-800 text-slate-400'
-                  }`}
+                    }`}
                 >
                   <Sun className="w-4 h-4 text-emerald-400" />
                   <span>Presensi Masuk (Pagi)</span>
@@ -790,11 +783,10 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
 
                 <button
                   onClick={() => setManualModeChoice('OUT')}
-                  className={`flex-1 p-3 rounded-2xl border text-xs font-bold flex items-center justify-center gap-2 transition ${
-                    manualModeChoice === 'OUT'
+                  className={`flex-1 p-3 rounded-2xl border text-xs font-bold flex items-center justify-center gap-2 transition ${manualModeChoice === 'OUT'
                       ? 'bg-amber-950/70 border-amber-500 text-amber-300'
                       : 'bg-slate-950/50 border-slate-800 text-slate-400'
-                  }`}
+                    }`}
                 >
                   <Home className="w-4 h-4 text-amber-400" />
                   <span>Presensi Pulang (Siang)</span>
@@ -854,11 +846,10 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                       <div
                         key={student.id}
                         onClick={() => setSelectedManualStudent(student)}
-                        className={`flex items-center justify-between p-3 rounded-2xl border cursor-pointer transition ${
-                          isSelected
+                        className={`flex items-center justify-between p-3 rounded-2xl border cursor-pointer transition ${isSelected
                             ? 'bg-emerald-950/50 border-emerald-500 shadow-md shadow-emerald-950'
                             : 'bg-slate-950/60 border-slate-800 hover:border-slate-700 hover:bg-slate-800/40'
-                        }`}
+                          }`}
                       >
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-xl overflow-hidden bg-slate-800 border border-slate-700 flex items-center justify-center flex-shrink-0">
@@ -876,9 +867,8 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                           </div>
                         </div>
 
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center border ${
-                          isSelected ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-700 text-transparent'
-                        }`}>
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center border ${isSelected ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-700 text-transparent'
+                          }`}>
                           <Check className="w-3.5 h-3.5" />
                         </div>
                       </div>
@@ -907,8 +897,8 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                   {isVerifyingManual
                     ? 'Memproses Presensi...'
                     : selectedManualStudent
-                    ? `Konfirmasi ${manualModeChoice === 'IN' ? 'Masuk' : 'Pulang'} (${selectedManualStudent.nickname})`
-                    : 'Pilih Siswa Terlebih Dahulu'}
+                      ? `Konfirmasi ${manualModeChoice === 'IN' ? 'Masuk' : 'Pulang'} (${selectedManualStudent.nickname})`
+                      : 'Pilih Siswa Terlebih Dahulu'}
                 </span>
                 <ChevronRight className="w-4 h-4" />
               </button>

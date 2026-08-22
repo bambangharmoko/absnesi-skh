@@ -1,5 +1,12 @@
 import * as faceapi from '@vladmandic/face-api';
 
+export interface HeadPose {
+  yaw: number; // Kiri (-) / Kanan (+) in degrees
+  pitch: number; // Bawah (-) / Atas (+) in degrees
+  roll: number; // Tilt in degrees
+  poseCategory: 'CENTER' | 'LEFT' | 'RIGHT' | 'UP' | 'DOWN';
+}
+
 export interface FaceDetectionResult {
   descriptor: Float32Array;
   box: {
@@ -8,6 +15,19 @@ export interface FaceDetectionResult {
     width: number;
     height: number;
   };
+  score: number;
+}
+
+export interface DetailedFaceResult {
+  descriptor: Float32Array;
+  box: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  landmarks: faceapi.FaceLandmarks68;
+  headPose: HeadPose;
   score: number;
 }
 
@@ -51,6 +71,83 @@ class FaceApiService {
     })();
 
     return this.loadPromise;
+  }
+
+  /**
+   * Estimate 3D Head Rotation (Yaw, Pitch, Roll) from 68 facial landmark coordinates
+   */
+  estimateHeadPose(landmarks: faceapi.FaceLandmarks68): HeadPose {
+    const pts = landmarks.positions;
+    // Landmark indices:
+    // 0: Left jaw edge, 16: Right jaw edge
+    // 30: Nose tip, 27: Nose bridge top, 8: Chin bottom
+    // 36: Left eye corner, 45: Right eye corner
+
+    const leftJawX = pts[0].x;
+    const rightJawX = pts[16].x;
+    const noseTipX = pts[30].x;
+    const noseTipY = pts[30].y;
+    const chinY = pts[8].y;
+    const noseBridgeY = pts[27].y;
+
+    const jawWidth = Math.max(1, rightJawX - leftJawX);
+    const leftDist = noseTipX - leftJawX;
+
+    // Yaw ratio: ~0.5 is centered. > 0.57 is looking right, < 0.43 is looking left.
+    const yawRatio = leftDist / jawWidth;
+    const yaw = (yawRatio - 0.5) * 80;
+
+    // Pitch ratio: vertical position of nose tip between nose bridge and chin
+    const faceHeight = Math.max(1, chinY - noseBridgeY);
+    const noseToChin = chinY - noseTipY;
+    const pitchRatio = noseToChin / faceHeight;
+    const pitch = (pitchRatio - 0.58) * 90;
+
+    // Roll angle (Tilt)
+    const leftEye = pts[36];
+    const rightEye = pts[45];
+    const roll = Math.atan2(rightEye.y - leftEye.y, rightEye.x - leftEye.x) * (180 / Math.PI);
+
+    let poseCategory: 'CENTER' | 'LEFT' | 'RIGHT' | 'UP' | 'DOWN' = 'CENTER';
+    if (yaw < -10) poseCategory = 'LEFT';
+    else if (yaw > 10) poseCategory = 'RIGHT';
+    else if (pitch > 8) poseCategory = 'UP';
+    else if (pitch < -8) poseCategory = 'DOWN';
+    else poseCategory = 'CENTER';
+
+    return { yaw, pitch, roll, poseCategory };
+  }
+
+  /**
+   * Detect face with 3D Head Pose and 128-dimensional descriptor
+   */
+  async detectFaceWithPose(
+    input: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement
+  ): Promise<DetailedFaceResult | null> {
+    await this.loadModels();
+
+    const options = new faceapi.TinyFaceDetectorOptions({
+      inputSize: 320,
+      scoreThreshold: 0.45,
+    });
+
+    const detection = await faceapi
+      .detectSingleFace(input, options)
+      .withFaceLandmarks()
+      .withFaceDescriptor();
+
+    if (!detection) return null;
+
+    const { x, y, width, height } = detection.detection.box;
+    const headPose = this.estimateHeadPose(detection.landmarks);
+
+    return {
+      descriptor: detection.descriptor,
+      box: { x, y, width, height },
+      landmarks: detection.landmarks,
+      headPose,
+      score: detection.detection.score,
+    };
   }
 
   /**
@@ -118,8 +215,9 @@ class FaceApiService {
       }
     }
 
+    const count = descriptors.length;
     for (let i = 0; i < length; i++) {
-      centroid[i] /= descriptors.length;
+      centroid[i] /= count;
     }
 
     // L2 Normalize
@@ -128,7 +226,7 @@ class FaceApiService {
       norm += centroid[i] * centroid[i];
     }
     norm = Math.sqrt(norm);
-    if (norm > 1e-6) {
+    if (norm > 0) {
       for (let i = 0; i < length; i++) {
         centroid[i] /= norm;
       }
@@ -138,12 +236,23 @@ class FaceApiService {
   }
 
   /**
-   * Match a query descriptor against enrolled student descriptors
-   * Default Euclidean distance threshold is 0.55 (standard for face-api 128-d vectors)
+   * Euclidean distance between two 128-d vectors
+   */
+  euclideanDistance(vec1: Float32Array | number[], vec2: Float32Array | number[]): number {
+    let sum = 0;
+    for (let i = 0; i < vec1.length; i++) {
+      const diff = vec1[i] - vec2[i];
+      sum += diff * diff;
+    }
+    return Math.sqrt(sum);
+  }
+
+  /**
+   * Match a detected descriptor against enrolled students
    */
   matchFace(
-    queryDescriptor: Float32Array,
-    enrolledList: Array<{
+    detected: Float32Array,
+    enrolledStudents: Array<{
       student: {
         id: string;
         nis: string;
@@ -155,24 +264,22 @@ class FaceApiService {
       };
       embeddings: Float32Array[];
     }>,
-    threshold = 0.52
+    threshold = 0.58
   ): MatchResult | null {
     let bestMatch: MatchResult | null = null;
-    let minDistance = Number.MAX_VALUE;
+    let minDistance = Infinity;
 
-    for (const item of enrolledList) {
-      for (const enrolledVec of item.embeddings) {
-        if (!enrolledVec || enrolledVec.length === 0) continue;
-        const distance = faceapi.euclideanDistance(queryDescriptor, enrolledVec);
+    for (const item of enrolledStudents) {
+      if (!item.embeddings || item.embeddings.length === 0) continue;
 
-        if (distance < minDistance) {
-          minDistance = distance;
-          // Calculate confidence score (0.0 to 1.0)
-          const confidence = Math.max(0, Math.min(1.0, 1.0 - (distance / 0.8)));
+      for (const emb of item.embeddings) {
+        const dist = this.euclideanDistance(detected, emb);
+        if (dist < minDistance) {
+          minDistance = dist;
           bestMatch = {
             student: item.student,
-            confidence: Math.round(confidence * 100) / 100,
-            distance: Math.round(distance * 1000) / 1000,
+            distance: dist,
+            confidence: Math.max(0, Math.min(1, 1 - dist * 0.85)),
           };
         }
       }
