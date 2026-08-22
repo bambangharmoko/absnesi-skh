@@ -1,17 +1,5 @@
 {
-  "python.defaultInterpreterPath": "c:\\beng\\Absensi-SKH\\backend\\python\\python.exe",
-  "python.analysis.extraPaths": [
-    "c:\\beng\\Absensi-SKH",
-    "c:\\beng\\Absensi-SKH\\backend",
-    "c:\\beng\\Absensi-SKH\\backend\\python\\Lib\\site-packages"
-  ],
-  "python.autoComplete.extraPaths": [
-    "c:\\beng\\Absensi-SKH",
-    "c:\\beng\\Absensi-SKH\\backend",
-    "c:\\beng\\Absensi-SKH\\backend\\python\\Lib\\site-packages"
-  ],
-  "python.analysis.diagnosticSeverityOverrides": {
-    "reportMissingImports": "none"
-  },
-  "typescript.tsdk": "frontend/node_modules/typescript/lib"
+  "typescript.tsdk": "frontend/node_modules/typescript/lib",
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "vscode.typescript-language-features"
 }
