@@ -15,6 +15,8 @@ def find_model_path(filename: str) -> Path:
         BASE_DIR / "app" / "models" / filename,
         BASE_DIR / "backend" / "app" / "models" / filename,
         Path(__file__).resolve().parent.parent / "models" / filename,
+        Path.cwd() / "backend" / "app" / "models" / filename,
+        Path.cwd() / "app" / "models" / filename,
         Path("/var/task/backend/app/models") / filename,
         Path("/var/task/app/models") / filename,
     ]
