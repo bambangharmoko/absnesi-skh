@@ -8,13 +8,6 @@ from backend.app.core.config import settings
 from backend.app.db.database import Base, engine, SessionLocal
 from backend.app.api.api_router import api_router
 from backend.app.db.models import Student, User, FaceEmbedding, Attendance
-from backend.seed import seed_initial_data
-
-# Create database tables safely
-try:
-    Base.metadata.create_all(bind=engine)
-except Exception as e:
-    print(f"[WARNING] Database table creation notice: {e}")
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -54,15 +47,20 @@ except Exception as e:
 
 @app.on_event("startup")
 def startup_event():
-    """Auto-seed demo data if database is fresh."""
+    """Startup initialization for database tables and seed checks."""
     try:
-        db = SessionLocal()
-        count = db.query(Student).count()
-        if count == 0:
-            print("[INFO] Database empty, seeding initial SKH student profiles...")
-            seed_initial_data(db)
-            print("[SUCCESS] Initial seed data created successfully.")
-        db.close()
+        # Create database tables if fresh (e.g. SQLite local)
+        if not settings.is_serverless:
+            Base.metadata.create_all(bind=engine)
+            
+            db = SessionLocal()
+            count = db.query(Student).count()
+            if count == 0:
+                print("[INFO] Database empty, seeding initial SKH student profiles...")
+                from backend.seed import seed_initial_data
+                seed_initial_data(db)
+                print("[SUCCESS] Initial seed data created successfully.")
+            db.close()
     except Exception as e:
         print(f"[NOTICE] Startup check: {e}")
 
