@@ -1,5 +1,19 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { Camera, CameraOff, RefreshCw, Sparkles, UserCheck, ShieldAlert, MonitorPlay, CheckCircle2 } from 'lucide-react';
+import {
+  Camera,
+  CameraOff,
+  RefreshCw,
+  Sparkles,
+  UserCheck,
+  ShieldAlert,
+  CheckCircle2,
+  User,
+  Search,
+  X,
+  Check,
+  ChevronRight,
+  HelpCircle,
+} from 'lucide-react';
 import { api, VerifyFrameResponse, Student } from '../../services/api';
 import { audioFeedback } from './AudioFeedback';
 
@@ -17,23 +31,33 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const hudCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   const [hudStatus, setHudStatus] = useState<'SEARCHING' | 'MATCHED' | 'UNKNOWN'>('SEARCHING');
-  const [hudLabel, setHudLabel] = useState<string>('Mencari wajah siswa...');
+  const [hudLabel, setHudLabel] = useState<string>('Mencari wajah siswa di depan kamera...');
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [enrolledStudents, setEnrolledStudents] = useState<Student[]>([]);
-  const [showSimulator, setShowSimulator] = useState<boolean>(false);
   const [lastVerifiedId, setLastVerifiedId] = useState<string | null>(null);
 
-  // Load enrolled students for simulator fallback
-  useEffect(() => {
+  // Manual Attendance Modal States
+  const [showManualModal, setShowManualModal] = useState<boolean>(false);
+  const [capturedSnapshot, setCapturedSnapshot] = useState<string | null>(null);
+  const [manualSearch, setManualSearch] = useState<string>('');
+  const [selectedManualStudent, setSelectedManualStudent] = useState<Student | null>(null);
+  const [isVerifyingManual, setIsVerifyingManual] = useState<boolean>(false);
+  const [manualAiMessage, setManualAiMessage] = useState<string | null>(null);
+
+  // Load enrolled students list
+  const loadStudents = useCallback(() => {
     api.getStudents().then(setEnrolledStudents).catch(() => {});
   }, []);
 
-  const streamRef = useRef<MediaStream | null>(null);
+  useEffect(() => {
+    loadStudents();
+  }, [loadStudents]);
 
   // Stop Camera & Force Release Hardware Device
   const stopCamera = useCallback(() => {
@@ -120,7 +144,6 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
     };
   }, [startCamera, stopCamera]);
 
-
   // Render HUD Overlay Canvas
   const drawHud = useCallback(
     (
@@ -146,12 +169,12 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       if (!bbox) {
-        // Draw searching target brackets in center
+        // Draw searching target circle
         const cx = canvas.width / 2;
         const cy = canvas.height / 2;
         const size = Math.min(canvas.width, canvas.height) * 0.45;
 
-        ctx.strokeStyle = 'rgba(234, 179, 8, 0.4)'; // Amber yellow pulse
+        ctx.strokeStyle = 'rgba(234, 179, 8, 0.4)';
         ctx.lineWidth = 2;
         ctx.setLineDash([12, 8]);
         ctx.beginPath();
@@ -161,21 +184,19 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
         return;
       }
 
-      // Draw bounding box
-      let strokeColor = '#eab308'; // Yellow for searching
+      let strokeColor = '#eab308';
       let bgColor = 'rgba(234, 179, 8, 0.2)';
 
       if (status === 'MATCHED') {
-        strokeColor = '#22c55e'; // Green
+        strokeColor = '#22c55e';
         bgColor = 'rgba(34, 197, 94, 0.25)';
       } else if (status === 'UNKNOWN') {
-        strokeColor = '#ef4444'; // Red
+        strokeColor = '#ef4444';
         bgColor = 'rgba(239, 68, 68, 0.2)';
       }
 
       const { x, y, w, h } = bbox;
 
-      // Draw corner brackets
       const cornerLen = Math.min(w, h) * 0.25;
       ctx.strokeStyle = strokeColor;
       ctx.lineWidth = 4;
@@ -210,7 +231,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
       ctx.lineTo(x + w, y + h - cornerLen);
       ctx.stroke();
 
-      // Label Banner (un-mirror text)
+      // Name Label Tag
       if (name) {
         ctx.fillStyle = strokeColor;
         ctx.fillRect(x, Math.max(0, y - 34), w, 34);
@@ -230,10 +251,10 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
 
   // Continuous Frame Capture & Recognition Loop
   useEffect(() => {
-    if (isPaused) return;
+    if (isPaused || showManualModal) return;
 
     const interval = setInterval(async () => {
-      if (isProcessing || isPaused) return;
+      if (isProcessing || isPaused || showManualModal) return;
 
       const video = videoRef.current;
       const canvas = canvasRef.current;
@@ -257,13 +278,11 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
           setHudLabel(`Terverifikasi: ${res.student.name} (${Math.round(res.confidence * 100)}%)`);
           drawHud(res.bounding_box || null, 'MATCHED', res.student.name);
 
-          // Trigger feedback if new or cooled down
           if (lastVerifiedId !== res.student.id) {
             setLastVerifiedId(res.student.id);
             audioFeedback.playCelebrationChime();
             audioFeedback.speakText(res.message);
             onVerified(res);
-            // Reset lastVerifiedId after cooldown
             setTimeout(() => setLastVerifiedId(null), 5000);
           }
         } else if (res.status === 'UNKNOWN') {
@@ -280,55 +299,114 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
       } finally {
         setIsProcessing(false);
       }
-    }, 400); // 400ms interval for smooth continuous scanning
+    }, 400);
 
     return () => clearInterval(interval);
-  }, [isPaused, isProcessing, selectedClass, onVerified, drawHud, lastVerifiedId]);
+  }, [isPaused, isProcessing, selectedClass, onVerified, drawHud, lastVerifiedId, showManualModal]);
 
-  // Simulator Test Action
-  const triggerSimulatedStudent = async (student: Student) => {
-    try {
-      setIsProcessing(true);
-      setHudStatus('MATCHED');
-      setHudLabel(`Simulasi: ${student.full_name}`);
+  // ==========================================
+  // MANUAL ATTENDANCE & PHOTO VERIFICATION
+  // ==========================================
 
-      const mockResponse: VerifyFrameResponse = {
-        status: 'MATCHED',
-        student: {
-          id: student.id,
-          nis: student.nis,
-          name: student.full_name,
-          nickname: student.nickname,
-          class_name: student.class_name,
-          category: student.category,
-          photo_url: student.latest_photo || null,
-        },
-        confidence: 0.98,
-        attendance_status: 'RECORDED_SUCCESS',
-        time: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-        message: `Selamat Pagi, ${student.nickname}! Presensi kamu berhasil dicatat.`,
-        bounding_box: { x: 120, y: 80, w: 220, h: 220 },
-      };
+  const handleOpenManualAttendance = async () => {
+    loadStudents();
+    setSelectedManualStudent(null);
+    setManualAiMessage(null);
 
-      await api.manualOverride({
-        student_id: student.id,
-        status: 'HADIR',
-        notes: 'Presensi via Kiosk Face Recognition Simulator',
-      });
+    // Capture current snapshot from video if active
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    let snapshotUrl: string | null = null;
 
-      audioFeedback.playCelebrationChime();
-      audioFeedback.speakText(mockResponse.message);
-      onVerified(mockResponse);
-    } catch (err) {
-      console.warn('Simulator error:', err);
-    } finally {
-      setIsProcessing(false);
+    if (video && canvas && isStreaming && video.videoWidth > 0) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        snapshotUrl = canvas.toDataURL('image/jpeg', 0.9);
+      }
+    }
+
+    setCapturedSnapshot(snapshotUrl);
+    setShowManualModal(true);
+
+    // Run AI verification on snapshot if available
+    if (snapshotUrl) {
+      setIsVerifyingManual(true);
+      setManualAiMessage('Memindai wajah dari foto snapshot...');
+      try {
+        const res = await api.verifyFrame(snapshotUrl, selectedClass);
+        if (res.status === 'MATCHED' && res.student) {
+          const matched = enrolledStudents.find(s => s.id === res.student?.id);
+          if (matched) {
+            setSelectedManualStudent(matched);
+            setManualAiMessage(`AI Berhasil Mengenali: ${matched.full_name} (${Math.round(res.confidence * 100)}%)`);
+          }
+        } else {
+          setManualAiMessage('Wajah tidak dikenali otomatis. Silakan pilih nama siswa dari daftar di bawah.');
+        }
+      } catch (e) {
+        setManualAiMessage('Pilih nama siswa untuk konfirmasi presensi manual.');
+      } finally {
+        setIsVerifyingManual(false);
+      }
     }
   };
 
+  const handleConfirmManualAttendance = async () => {
+    if (!selectedManualStudent) return;
+
+    try {
+      setIsVerifyingManual(true);
+      const res = await api.manualOverride({
+        student_id: selectedManualStudent.id,
+        status: 'HADIR',
+        notes: 'Presensi via Foto & Konfirmasi Manual',
+      });
+
+      const responseObj: VerifyFrameResponse = {
+        status: 'MATCHED',
+        student: {
+          id: selectedManualStudent.id,
+          nis: selectedManualStudent.nis,
+          name: selectedManualStudent.full_name,
+          nickname: selectedManualStudent.nickname,
+          class_name: selectedManualStudent.class_name,
+          category: selectedManualStudent.category,
+          photo_url: selectedManualStudent.latest_photo || null,
+        },
+        confidence: 1.0,
+        attendance_status: 'RECORDED_SUCCESS',
+        time: res.time_in,
+        message: `Presensi manual berhasil! Selamat datang, ${selectedManualStudent.nickname}.`,
+        bounding_box: null,
+      };
+
+      audioFeedback.playCelebrationChime();
+      audioFeedback.speakText(responseObj.message);
+      onVerified(responseObj);
+
+      setShowManualModal(false);
+    } catch (err) {
+      console.warn('Manual attendance error:', err);
+    } finally {
+      setIsVerifyingManual(false);
+    }
+  };
+
+  const filteredStudents = enrolledStudents.filter(s => {
+    if (selectedClass && selectedClass !== 'all' && selectedClass !== 'ALL') {
+      if (s.class_name.toLowerCase() !== selectedClass.toLowerCase()) return false;
+    }
+    if (!manualSearch.trim()) return true;
+    const q = manualSearch.toLowerCase();
+    return s.full_name.toLowerCase().includes(q) || s.nickname.toLowerCase().includes(q) || s.nis.toLowerCase().includes(q);
+  });
+
   return (
     <div className="relative w-full h-full flex flex-col items-center justify-center overflow-hidden rounded-3xl bg-slate-950 border border-slate-800 shadow-2xl">
-      {/* Video Stream Container - ALWAYS RENDERS VIDEO IN DOM */}
+      {/* Video Stream Container */}
       <div className="relative w-full h-full min-h-[460px] md:min-h-[560px] flex items-center justify-center overflow-hidden bg-slate-900">
         {/* Video Element */}
         <video
@@ -352,10 +430,10 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
           className="absolute inset-0 w-full h-full object-cover pointer-events-none transform scale-x-[-1] z-10"
         />
 
-        {/* Laser Scan Line when streaming */}
+        {/* Laser Scan Line */}
         {isStreaming && <div className="scanner-laser z-10" />}
 
-        {/* Fallback Display when Camera is not yet streaming or error */}
+        {/* Fallback Display when Camera is Offline */}
         {!isStreaming && (
           <div className="flex flex-col items-center justify-center p-8 text-center max-w-md z-20">
             <div className="w-20 h-20 rounded-full bg-slate-800/80 border border-slate-700 flex items-center justify-center text-slate-400 mb-4 animate-pulse">
@@ -365,22 +443,22 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
               {cameraError ? 'Izin Kamera Diperlukan' : 'Memulai Kamera...'}
             </h4>
             <p className="text-sm text-slate-400 mb-6">
-              {cameraError || 'Mohon izinkan akses webcam pada browser atau klik tombol coba kamera di bawah.'}
+              {cameraError || 'Mohon izinkan akses webcam pada browser atau lakukan absensi manual dengan tombol di bawah.'}
             </p>
             <div className="flex flex-wrap gap-3 justify-center">
               <button
                 onClick={startCamera}
-                className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold flex items-center gap-2 shadow-lg shadow-emerald-600/30 transition"
+                className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold flex items-center gap-2 shadow-lg shadow-emerald-600/30 transition text-sm"
               >
                 <Camera className="w-4 h-4" />
                 Aktifkan Kamera
               </button>
               <button
-                onClick={() => setShowSimulator(true)}
-                className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold flex items-center gap-2 shadow-lg shadow-blue-600/30 transition"
+                onClick={handleOpenManualAttendance}
+                className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold flex items-center gap-2 shadow-lg shadow-blue-600/30 transition text-sm"
               >
-                <MonitorPlay className="w-4 h-4" />
-                Uji Coba Simulator Siswa
+                <UserCheck className="w-4 h-4" />
+                Absen Manual (Pilih Siswa)
               </button>
             </div>
           </div>
@@ -389,7 +467,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
         {/* Hidden Canvas for Frame Capture */}
         <canvas ref={canvasRef} className="hidden" />
 
-        {/* Top Floating Status Indicator */}
+        {/* Top Floating Status & Action Bar */}
         <div className="absolute top-4 left-4 right-4 flex items-center justify-between pointer-events-none z-30">
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass-panel text-xs sm:text-sm font-semibold shadow-lg">
             {hudStatus === 'MATCHED' && <UserCheck className="w-4 h-4 text-emerald-400 animate-bounce" />}
@@ -416,63 +494,178 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
             >
               <RefreshCw className="w-4 h-4" />
             </button>
+
+            {/* BUTTON: ABSENSI MANUAL & FOTO */}
             <button
-              onClick={() => setShowSimulator(!showSimulator)}
-              className="px-3 py-1.5 rounded-full bg-blue-600/80 hover:bg-blue-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-md transition"
+              onClick={handleOpenManualAttendance}
+              className="px-4 py-2 rounded-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs sm:text-sm font-bold flex items-center gap-2 shadow-lg shadow-emerald-600/30 transition transform active:scale-95"
             >
-              <MonitorPlay className="w-3.5 h-3.5" />
-              <span>Simulasi Siswa</span>
+              <Camera className="w-4 h-4" />
+              <span>Absen Manual & Foto</span>
             </button>
           </div>
         </div>
 
-        {/* Bottom Instruction Bar */}
-        <div className="absolute bottom-4 left-4 right-4 pointer-events-none z-30 text-center">
-          <div className="inline-block px-5 py-2 rounded-2xl glass-panel text-xs sm:text-sm text-slate-300 shadow-xl border border-slate-700/50">
-            Arahkan wajah ke kamera • Sistem AI memindai otomatis tanpa sentuh
+        {/* Bottom Instruction Bar with Fast Action */}
+        <div className="absolute bottom-4 left-4 right-4 pointer-events-none z-30 flex items-center justify-between">
+          <div className="hidden sm:inline-block px-4 py-2 rounded-2xl glass-panel text-xs text-slate-300 shadow-xl border border-slate-700/50">
+            💡 <span className="font-semibold text-emerald-400">Tips:</span> Arahkan wajah ke kamera • Sistem AI memindai otomatis
           </div>
+
+          <button
+            onClick={handleOpenManualAttendance}
+            className="pointer-events-auto px-4 py-2 rounded-2xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700 text-xs font-semibold text-slate-200 flex items-center gap-1.5 shadow-lg backdrop-blur-md transition ml-auto"
+          >
+            <HelpCircle className="w-3.5 h-3.5 text-amber-400" />
+            <span>Wajah Tidak Terdeteksi? Klik Absen Manual</span>
+          </button>
         </div>
       </div>
 
-      {/* Simulator Drawer for testing */}
-      {showSimulator && (
-        <div className="w-full bg-slate-900 border-t border-slate-800 p-4 transition-all z-40">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-amber-400" />
-              <h5 className="text-sm font-bold text-slate-200">
-                Pilih Profil Siswa Terdaftar untuk Simulasi Presensi Instan:
-              </h5>
-            </div>
-            <button
-              onClick={() => setShowSimulator(false)}
-              className="text-xs text-slate-400 hover:text-white px-2 py-1 rounded bg-slate-800"
-            >
-              Tutup
-            </button>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
-            {enrolledStudents.map(student => (
+      {/* ========================================== */}
+      {/* MODAL: ABSENSI MANUAL & VERIFIKASI FOTO */}
+      {/* ========================================== */}
+      {showManualModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
+          <div className="relative w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="flex items-center justify-between p-5 border-b border-slate-800 bg-slate-900/60">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+                  <Camera className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Absensi Manual & Verifikasi Foto</h3>
+                  <p className="text-xs text-slate-400">Foto snapshot diambil dari kamera saat tombol ditekan</p>
+                </div>
+              </div>
               <button
-                key={student.id}
-                onClick={() => triggerSimulatedStudent(student)}
-                className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-800/80 hover:bg-emerald-950/60 border border-slate-700 hover:border-emerald-500/50 text-left transition group"
+                onClick={() => setShowManualModal(false)}
+                className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition"
               >
-                <div className="w-10 h-10 rounded-lg overflow-hidden bg-slate-700 flex-shrink-0 flex items-center justify-center">
-                  {student.latest_photo ? (
-                    <img src={student.latest_photo} alt={student.nickname} className="w-full h-full object-cover" />
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 overflow-y-auto space-y-5 flex-1">
+              {/* Snapshot Preview & AI Status */}
+              <div className="flex flex-col sm:flex-row items-center gap-4 p-4 rounded-2xl bg-slate-950 border border-slate-800">
+                <div className="w-28 h-28 rounded-2xl overflow-hidden bg-slate-800 border border-slate-700 flex-shrink-0 flex items-center justify-center">
+                  {capturedSnapshot ? (
+                    <img src={capturedSnapshot} alt="Snapshot" className="w-full h-full object-cover transform scale-x-[-1]" />
                   ) : (
-                    <span className="font-bold text-emerald-400">{student.nickname.charAt(0)}</span>
+                    <CameraOff className="w-8 h-8 text-slate-500" />
                   )}
                 </div>
-                <div className="overflow-hidden">
-                  <div className="text-xs font-bold text-slate-200 group-hover:text-emerald-300 truncate">
-                    {student.nickname}
+
+                <div className="flex-1 space-y-1.5 text-center sm:text-left">
+                  <div className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                    Hasil Pemindaian Snapshot:
                   </div>
-                  <div className="text-[10px] text-slate-400 truncate">{student.class_name}</div>
+                  <div className="text-sm font-semibold text-slate-200">
+                    {manualAiMessage || 'Foto berhasil diambil. Pilih nama siswa di bawah untuk konfirmasi.'}
+                  </div>
+                  {selectedManualStudent && (
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-xs font-bold mt-1">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Siswa Dipilih: {selectedManualStudent.full_name} ({selectedManualStudent.nickname})</span>
+                    </div>
+                  )}
                 </div>
+              </div>
+
+              {/* Search & Student List */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                    Pilih Nama Siswa ({filteredStudents.length} siswa):
+                  </label>
+                  <span className="text-xs text-slate-500">Klik siswa yang sesuai</span>
+                </div>
+
+                <div className="relative">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={manualSearch}
+                    onChange={e => setManualSearch(e.target.value)}
+                    placeholder="Cari nama siswa atau NIS..."
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white focus:outline-none focus:border-emerald-500 placeholder-slate-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-56 overflow-y-auto pr-1">
+                  {filteredStudents.map(student => {
+                    const isSelected = selectedManualStudent?.id === student.id;
+                    return (
+                      <div
+                        key={student.id}
+                        onClick={() => setSelectedManualStudent(student)}
+                        className={`flex items-center justify-between p-3 rounded-2xl border cursor-pointer transition ${
+                          isSelected
+                            ? 'bg-emerald-950/50 border-emerald-500 shadow-md shadow-emerald-950'
+                            : 'bg-slate-950/60 border-slate-800 hover:border-slate-700 hover:bg-slate-800/40'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl overflow-hidden bg-slate-800 border border-slate-700 flex items-center justify-center flex-shrink-0">
+                            {student.latest_photo ? (
+                              <img src={student.latest_photo} alt={student.nickname} className="w-full h-full object-cover" />
+                            ) : (
+                              <User className="w-5 h-5 text-slate-400" />
+                            )}
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold text-white">{student.full_name}</div>
+                            <div className="text-[11px] text-emerald-400 font-medium">
+                              {student.nickname} • <span className="text-slate-400">{student.class_name}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center border ${
+                          isSelected ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-700 text-transparent'
+                        }`}>
+                          <Check className="w-3.5 h-3.5" />
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {filteredStudents.length === 0 && (
+                    <div className="col-span-full py-8 text-center text-xs text-slate-500">
+                      Tidak ada siswa yang sesuai pencarian.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-5 border-t border-slate-800 bg-slate-900/60 flex items-center justify-between gap-3">
+              <button
+                onClick={() => setShowManualModal(false)}
+                className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 transition"
+              >
+                Batal
               </button>
-            ))}
+
+              <button
+                onClick={handleConfirmManualAttendance}
+                disabled={!selectedManualStudent || isVerifyingManual}
+                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-bold text-xs sm:text-sm flex items-center gap-2 shadow-lg shadow-emerald-600/30 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>
+                  {isVerifyingManual
+                    ? 'Memproses Presensi...'
+                    : selectedManualStudent
+                    ? `Konfirmasi Hadir (${selectedManualStudent.nickname})`
+                    : 'Pilih Siswa Terlebih Dahulu'}
+                </span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
       )}
