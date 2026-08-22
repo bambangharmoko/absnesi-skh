@@ -115,52 +115,77 @@ export const RegisterStudentPage: React.FC<RegisterStudentPageProps> = ({ onSucc
     reader.readAsDataURL(file);
   };
 
-  // Convert base64 DataURL to Blob for multipart upload
-  const dataURLtoBlob = (dataurl: string) => {
-    const arr = dataurl.split(',');
-    const mimeMatch = arr[0].match(/:(.*?);/);
-    const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
-    const bstr = atob(arr[1]);
-    let n = bstr.length;
-    const u8arr = new Uint8Array(n);
-    while (n--) {
-      u8arr[n] = bstr.charCodeAt(n);
+  // Safe convert base64 DataURL to Blob for multipart upload
+  const dataURLtoBlob = (dataurl: string): Blob | null => {
+    try {
+      const arr = dataurl.split(',');
+      if (arr.length < 2 || !arr[1]) return null;
+      const mimeMatch = arr[0].match(/:(.*?);/);
+      const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+      const bstr = atob(arr[1].trim());
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+      }
+      return new Blob([u8arr], { type: mime });
+    } catch (e) {
+      console.warn('Error converting dataURL to blob:', e);
+      return null;
     }
-    return new Blob([u8arr], { type: mime });
   };
 
   const handleSubmit = async () => {
     setIsSubmitting(true);
     setErrorMsg(null);
 
-    const validPhotos = capturedPhotos.filter((p): p is string => p !== null);
+    if (!formData.nis.trim() || !formData.full_name.trim() || !formData.nickname.trim()) {
+      setErrorMsg('Harap lengkapi NIS, Nama Lengkap, dan Nama Panggilan pada Langkah 1.');
+      setStep(1);
+      setIsSubmitting(false);
+      return;
+    }
+
+    const validPhotos = capturedPhotos.filter((p): p is string => Boolean(p && p.length > 50));
     if (validPhotos.length === 0) {
-      setErrorMsg('Harap ambil minimal 1 foto wajah siswa.');
+      setErrorMsg('Harap ambil minimal 1 foto wajah siswa pada Langkah 2.');
+      setStep(2);
       setIsSubmitting(false);
       return;
     }
 
     try {
       const data = new FormData();
-      data.append('nis', formData.nis);
-      data.append('full_name', formData.full_name);
-      data.append('nickname', formData.nickname);
+      data.append('nis', formData.nis.trim());
+      data.append('full_name', formData.full_name.trim());
+      data.append('nickname', formData.nickname.trim());
       data.append('class_name', formData.class_name);
-      data.append('category', formData.category);
+      data.append('category', formData.category.trim() || 'Umum');
 
+      let appendedCount = 0;
       validPhotos.forEach((dataUrl, idx) => {
         const blob = dataURLtoBlob(dataUrl);
-        data.append('photos', blob, `pose_${idx + 1}.jpg`);
+        if (blob) {
+          data.append('photos', blob, `pose_${idx + 1}.jpg`);
+          appendedCount++;
+        }
       });
+
+      if (appendedCount === 0) {
+        throw new Error('Gagal memproses file foto. Silakan ambil ulang foto wajah.');
+      }
 
       await api.enrollStudentFace(data);
       onSuccess();
     } catch (err: unknown) {
-      setErrorMsg((err as Error).message || 'Gagal mendaftarkan data siswa.');
+      const msg = (err as Error).message || 'Gagal mendaftarkan data siswa.';
+      setErrorMsg(msg);
+      console.error('Enroll error detail:', err);
     } finally {
       setIsSubmitting(false);
     }
   };
+
 
   return (
     <div className="max-w-4xl mx-auto w-full p-4 sm:p-6 lg:p-8">
