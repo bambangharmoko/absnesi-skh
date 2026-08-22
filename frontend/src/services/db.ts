@@ -38,51 +38,9 @@ export interface AttendanceRecord {
   created_at: string;
 }
 
-const INITIAL_STUDENTS: StudentRecord[] = [
-  {
-    id: '5d9baac8-87c7-485e-95ba-35f1f0a14f49',
-    nis: 'SKH-20260822',
-    full_name: 'Jonathan',
-    nickname: 'Jo',
-    class_name: 'Kelas 1 Autis',
-    category: 'Autism Spectrum',
-    is_active: true,
-    created_at: new Date().toISOString(),
-    photo_count: 5,
-    latest_photo: null,
-    embeddings: [],
-  },
-  {
-    id: '202dbba5-218a-49b6-9eb2-277d16407508',
-    nis: 'SKH-2026-TEST-999',
-    full_name: 'Ahmad Fauzi',
-    nickname: 'Fauzi',
-    class_name: 'Kelas 1 Autis',
-    category: 'Autism Spectrum',
-    is_active: true,
-    created_at: new Date().toISOString(),
-    photo_count: 5,
-    latest_photo: null,
-    embeddings: [],
-  },
-  {
-    id: '15417f9c-5d8f-4166-9bbd-4bb00d5a900a',
-    nis: 'SKH-TEST-001',
-    full_name: 'Test Student',
-    nickname: 'Test',
-    class_name: 'Kelas 2 Tuna Rungu',
-    category: 'Tuna Rungu',
-    is_active: true,
-    created_at: new Date().toISOString(),
-    photo_count: 5,
-    latest_photo: null,
-    embeddings: [],
-  }
-];
-
 class DatabaseService {
-  private studentsKey = 'skh_students_v2';
-  private attendancesKey = 'skh_attendances_v2';
+  private studentsKey = 'skh_students_v3';
+  private attendancesKey = 'skh_attendances_v3';
 
   constructor() {
     this.initDatabase();
@@ -90,9 +48,39 @@ class DatabaseService {
   }
 
   private initDatabase() {
-    const existing = localStorage.getItem(this.studentsKey);
-    if (!existing) {
-      localStorage.setItem(this.studentsKey, JSON.stringify(INITIAL_STUDENTS));
+    // Check previous storage versions and clean dummy test records
+    const previousKeys = ['skh_students_v2', 'skh_students_v1', 'skh_students'];
+    let existingList: StudentRecord[] = [];
+
+    for (const key of previousKeys) {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            existingList = parsed;
+            break;
+          }
+        } catch (e) {}
+      }
+    }
+
+    // Filter out mock test dummy records
+    existingList = existingList.filter(
+      s => s.nis !== 'SKH-TEST-001' && s.nis !== 'SKH-2026-TEST-999' && !s.full_name.includes('Test Student') && !s.full_name.includes('Ahmad Fauzi')
+    );
+
+    const currentRaw = localStorage.getItem(this.studentsKey);
+    if (!currentRaw) {
+      localStorage.setItem(this.studentsKey, JSON.stringify(existingList));
+    } else {
+      try {
+        let currentList: StudentRecord[] = JSON.parse(currentRaw);
+        currentList = currentList.filter(
+          s => s.nis !== 'SKH-TEST-001' && s.nis !== 'SKH-2026-TEST-999' && !s.full_name.includes('Test Student') && !s.full_name.includes('Ahmad Fauzi')
+        );
+        localStorage.setItem(this.studentsKey, JSON.stringify(currentList));
+      } catch (e) {}
     }
   }
 
@@ -132,10 +120,10 @@ class DatabaseService {
           }),
         }));
         localStorage.setItem(this.studentsKey, JSON.stringify(mapped));
-        console.log(`[Database] Synced ${mapped.length} students from Supabase.`);
+        console.log(`[Database] Synced ${mapped.length} real students from Supabase.`);
       }
     } catch (e) {
-      console.warn('[Database] Sync notice:', e);
+      console.warn('[Database] Supabase sync notice:', e);
     }
   }
 
@@ -216,7 +204,7 @@ class DatabaseService {
 
     localStorage.setItem(this.studentsKey, JSON.stringify(list));
 
-    // Async sync to Supabase Cloud if available
+    // Sync to Supabase Cloud
     if (supabase) {
       try {
         await supabase.from('students').upsert({
