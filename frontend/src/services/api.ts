@@ -100,11 +100,23 @@ export const api = {
       body: formData,
     });
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: 'Gagal mendaftarkan wajah siswa' }));
-      throw new Error(err.detail || 'Gagal mendaftarkan wajah siswa');
+      let errorDetail = `Gagal mendaftarkan wajah siswa (Status ${res.status})`;
+      try {
+        const errJson = await res.json();
+        if (errJson && errJson.detail) {
+          errorDetail = typeof errJson.detail === 'string' ? errJson.detail : JSON.stringify(errJson.detail);
+        }
+      } catch {
+        const text = await res.text().catch(() => '');
+        if (text) {
+          errorDetail = `Error ${res.status}: ${text.slice(0, 120)}`;
+        }
+      }
+      throw new Error(errorDetail);
     }
     return res.json();
   },
+
 
   async deleteStudent(studentId: string): Promise<{ status: string; message: string }> {
     const res = await fetch(`${API_BASE}/students/${studentId}`, {

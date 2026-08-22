@@ -4,29 +4,48 @@ from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
-# Load .env file from backend root
-env_path = BASE_DIR / ".env"
-if env_path.exists():
-    load_dotenv(dotenv_path=env_path)
+# Load .env file from backend root or parent
+for p in [BASE_DIR / ".env", BASE_DIR / "backend" / ".env", Path(".env")]:
+    if p.exists():
+        load_dotenv(dotenv_path=p)
+        break
+
+def find_model_path(filename: str) -> Path:
+    candidates = [
+        BASE_DIR / "app" / "models" / filename,
+        BASE_DIR / "backend" / "app" / "models" / filename,
+        Path(__file__).resolve().parent.parent / "models" / filename,
+        Path("/var/task/backend/app/models") / filename,
+        Path("/var/task/app/models") / filename,
+    ]
+    for c in candidates:
+        if c.exists():
+            return c
+    return BASE_DIR / "app" / "models" / filename
 
 class Settings:
     PROJECT_NAME: str = os.getenv("PROJECT_NAME", "Absensi SKH Face Recognition API")
     VERSION: str = "1.0.0"
     API_V1_STR: str = "/api/v1"
     
-    # Database: Supabase PostgreSQL or fallback SQLite
-    raw_db_url: str = os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR / 'data' / 'absensi_skh.db'}")
+    # Serverless detection (Vercel / Lambda)
+    is_serverless: bool = bool(os.getenv("VERCEL") == "1" or "AWS_LAMBDA_FUNCTION_NAME" in os.environ)
+    
+    # Database URL: Active Supabase Cloud PostgreSQL with fallback
+    default_supabase_url = "postgresql://postgres.lygoswawqplklqvnouao:Wkwkland55.@aws-0-ap-northeast-2.pooler.supabase.com:6543/postgres?sslmode=require"
+    raw_db_url: str = os.getenv("DATABASE_URL", default_supabase_url)
+    
+    if not raw_db_url or (is_serverless and raw_db_url.startswith("sqlite")):
+        raw_db_url = default_supabase_url
+        
     if raw_db_url.startswith("postgres://"):
         raw_db_url = raw_db_url.replace("postgres://", "postgresql://", 1)
     DATABASE_URL: str = raw_db_url
     
     # Supabase Client Credentials
-    SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
+    SUPABASE_URL: str = os.getenv("SUPABASE_URL", "https://lygoswawqplklqvnouao.supabase.co")
     SUPABASE_ANON_KEY: str = os.getenv("SUPABASE_ANON_KEY", "")
     SUPABASE_SERVICE_ROLE_KEY: str = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
-    
-    # Serverless / Read-only filesystem detection (Vercel / Lambda)
-    is_serverless: bool = bool(os.getenv("VERCEL") == "1" or "AWS_LAMBDA_FUNCTION_NAME" in os.environ)
     
     if is_serverless:
         temp_base = Path("/tmp")
@@ -43,8 +62,8 @@ class Settings:
     MODELS_DIR: Path = BASE_DIR / "app" / "models"
     
     # Deep Learning Model Paths (YuNet Face Detector & SFace Feature Recognizer)
-    YUNET_MODEL_PATH: Path = BASE_DIR / "app" / "models" / "face_detection_yunet.onnx"
-    SFACE_MODEL_PATH: Path = BASE_DIR / "app" / "models" / "face_recognition_sface.onnx"
+    YUNET_MODEL_PATH: Path = find_model_path("face_detection_yunet.onnx")
+    SFACE_MODEL_PATH: Path = find_model_path("face_recognition_sface.onnx")
     
     # Face Recognition Config
     SIMILARITY_THRESHOLD: float = float(os.getenv("SIMILARITY_THRESHOLD", "0.35"))
