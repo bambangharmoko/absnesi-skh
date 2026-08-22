@@ -2,6 +2,7 @@ import sys
 import os
 from pathlib import Path
 
+# Add project root and backend dir to sys.path
 root_dir = Path(__file__).resolve().parent.parent
 backend_dir = root_dir / "backend"
 
@@ -9,31 +10,18 @@ for p in [str(root_dir), str(backend_dir), str(Path.cwd()), str(Path.cwd() / "ba
     if p not in sys.path:
         sys.path.insert(0, p)
 
-try:
-    from backend.app.main import app
-    try:
-        from mangum import Mangum
-        handler = Mangum(app, lifespan="off")
-    except Exception:
-        handler = app
-except Exception as e:
-    import traceback
-    traceback.print_exc()
-    from fastapi import FastAPI
-    from fastapi.responses import JSONResponse
-    app = FastAPI()
-    err_str = f"Startup Import Error: {type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
-    
-    @app.api_route("/{path_name:path}", methods=["GET", "POST", "PUT", "DELETE"])
-    async def catch_all(path_name: str):
-        return JSONResponse(
-            status_code=500,
-            content={"detail": err_str}
-        )
-    try:
-        from mangum import Mangum
-        handler = Mangum(app, lifespan="off")
-    except Exception:
-        handler = app
+from backend.app.main import app
+from backend.app.api.api_router import api_router
 
-__all__ = ["app", "handler"]
+# Include routes on multiple prefixes for Vercel path compatibility
+try:
+    app.include_router(api_router, prefix="/v1")
+except Exception:
+    pass
+
+try:
+    app.include_router(api_router, prefix="")
+except Exception:
+    pass
+
+__all__ = ["app"]
