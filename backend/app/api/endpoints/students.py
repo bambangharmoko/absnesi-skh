@@ -1,8 +1,9 @@
 import os
+import io
 import json
 import uuid
-import cv2
 import numpy as np
+from PIL import Image
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
@@ -13,6 +14,13 @@ from backend.app.schemas.student_schema import StudentCreate, StudentUpdate, Stu
 from backend.app.services.face_detector import face_detector
 from backend.app.services.face_embedder import face_embedder
 from backend.app.core.config import settings
+
+try:
+    import cv2
+    HAS_CV2 = True
+except Exception:
+    cv2 = None
+    HAS_CV2 = False
 
 router = APIRouter()
 
@@ -83,7 +91,7 @@ async def enroll_student_face(
 ):
     """
     Enroll a new student or update face profile with 1 to 5 face photos.
-    Extracts deep 128-d SFace embeddings and stores them in Supabase / SQLite database.
+    Extracts deep 128-d embeddings and stores them in Supabase PostgreSQL database.
     """
     nis_clean = nis.strip()
     full_name_clean = full_name.strip()
@@ -125,8 +133,15 @@ async def enroll_student_face(
             if not contents:
                 continue
 
-            nparr = np.frombuffer(contents, np.uint8)
-            img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            img_bgr = None
+            if HAS_CV2:
+                nparr = np.frombuffer(contents, np.uint8)
+                img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+            if img_bgr is None:
+                pil_img = Image.open(io.BytesIO(contents)).convert("RGB")
+                img_np = np.array(pil_img)
+                img_bgr = img_np[:, :, ::-1]
 
             if img_bgr is None:
                 continue
@@ -138,9 +153,13 @@ async def enroll_student_face(
                 min_dim = min(h, w)
                 crop_y = max(0, (h - min_dim) // 2)
                 crop_x = max(0, (w - min_dim) // 2)
-                aligned_face = cv2.resize(img_bgr[crop_y:crop_y+min_dim, crop_x:crop_x+min_dim], (160, 160))
+                crop = img_bgr[crop_y:crop_y+min_dim, crop_x:crop_x+min_dim]
+                if HAS_CV2:
+                    aligned_face = cv2.resize(crop, (160, 160))
+                else:
+                    aligned_face = np.array(Image.fromarray(crop).resize((160, 160)))
 
-            # Extract 128-d Deep SFace embedding
+            # Extract 128-d Deep embedding
             emb_vec = face_embedder.extract_embedding(
                 img_bgr if face_meta is not None else aligned_face,
                 face_meta
@@ -153,7 +172,11 @@ async def enroll_student_face(
             try:
                 os.makedirs(settings.STUDENT_PHOTOS_DIR, exist_ok=True)
                 photo_path = settings.STUDENT_PHOTOS_DIR / filename
-                cv2.imwrite(str(photo_path), aligned_face)
+                if HAS_CV2:
+                    cv2.imwrite(str(photo_path), aligned_face)
+                else:
+                    pil_save = Image.fromarray(aligned_face[:, :, ::-1])
+                    pil_save.save(str(photo_path))
             except Exception as write_err:
                 print(f"Notice saving student photo: {write_err}")
 
