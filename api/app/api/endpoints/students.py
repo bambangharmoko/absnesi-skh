@@ -8,12 +8,12 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Q
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from backend.app.db.database import get_db
-from backend.app.db.models import Student, FaceEmbedding
-from backend.app.schemas.student_schema import StudentCreate, StudentUpdate, StudentOut
-from backend.app.services.face_detector import face_detector
-from backend.app.services.face_embedder import face_embedder
-from backend.app.core.config import settings
+from ...db.database import get_db
+from ...db.models import Student, FaceEmbedding
+from ...schemas.student_schema import StudentCreate, StudentUpdate, StudentOut
+from ...services.face_detector import face_detector
+from ...services.face_embedder import face_embedder
+from ...core.config import settings
 
 try:
     import cv2

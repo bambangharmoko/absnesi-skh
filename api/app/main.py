@@ -4,10 +4,10 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from backend.app.core.config import settings
-from backend.app.db.database import Base, engine, SessionLocal
-from backend.app.api.api_router import api_router
-from backend.app.db.models import Student, User, FaceEmbedding, Attendance
+from .core.config import settings
+from .db.database import Base, engine, SessionLocal
+from .api.api_router import api_router
+from .db.models import Student, User, FaceEmbedding, Attendance
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -34,8 +34,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount API Router
+# Mount API Router on /api/v1 as well as /v1 and root
 app.include_router(api_router, prefix=settings.API_V1_STR)
+app.include_router(api_router, prefix="/v1")
+app.include_router(api_router, prefix="")
 
 # Ensure snapshot dir exists & mount
 try:
@@ -49,18 +51,8 @@ except Exception as e:
 def startup_event():
     """Startup initialization for database tables and seed checks."""
     try:
-        # Create database tables if fresh (e.g. SQLite local)
         if not settings.is_serverless:
             Base.metadata.create_all(bind=engine)
-            
-            db = SessionLocal()
-            count = db.query(Student).count()
-            if count == 0:
-                print("[INFO] Database empty, seeding initial SKH student profiles...")
-                from backend.seed import seed_initial_data
-                seed_initial_data(db)
-                print("[SUCCESS] Initial seed data created successfully.")
-            db.close()
     except Exception as e:
         print(f"[NOTICE] Startup check: {e}")
 
@@ -77,4 +69,4 @@ def root_status():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("backend.app.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("api.app.main:app", host="0.0.0.0", port=8000, reload=True)

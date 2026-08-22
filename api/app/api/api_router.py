@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from backend.app.api.endpoints import auth, students, attendance, recognition, reports
+from .endpoints import auth, students, attendance, recognition, reports
 
 api_router = APIRouter()
 
