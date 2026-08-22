@@ -332,18 +332,37 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
     return () => clearInterval(interval);
   }, [isPaused, isProcessing, selectedClass, drawHud, showManualModal, pendingMatch]);
 
+  // Warning Alert Banner State
+  const [warningAlertMsg, setWarningAlertMsg] = useState<string | null>(null);
+
+
   // ==========================================
   // CONFIRM ATTENDANCE (MASUK / PULANG)
   // ==========================================
 
   const handleConfirmAttendance = async (actionType?: 'IN' | 'OUT') => {
     if (!pendingMatch) return;
+    setWarningAlertMsg(null);
+
+    const student = pendingMatch.student;
+    const chosenMode = actionType || (kioskMode === 'AUTO' ? 'AUTO' : kioskMode);
+
+    // VALIDATION: Cannot check-out if student has not checked in today!
+    if (chosenMode === 'OUT') {
+      const todayList = db.getAttendances(new Date().toISOString().split('T')[0]);
+      const currentTodayRecord = todayList.find(a => a.student_id === student.id);
+
+      if (!currentTodayRecord || !currentTodayRecord.time_in) {
+        const alertText = `Siswa ${student.nickname} belum ada absen masuk hari ini. Silakan klik tombol Masuk terlebih dahulu ya!`;
+        setWarningAlertMsg(alertText);
+        audioFeedback.speakText(alertText);
+        return;
+      }
+    }
+
     setIsSubmittingAttendance(true);
 
     try {
-      const student = pendingMatch.student;
-      const chosenMode = actionType || (kioskMode === 'AUTO' ? 'AUTO' : kioskMode);
-
       const attResult = await db.recordAttendance(
         {
           id: student.id,
@@ -358,34 +377,45 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
         chosenMode
       );
 
+      if (attResult.status === 'NOT_CHECKED_IN') {
+        setWarningAlertMsg(attResult.message);
+        audioFeedback.speakText(attResult.message);
+        setIsSubmittingAttendance(false);
+        return;
+      }
+
       const isCheckIn = chosenMode === 'IN' || (chosenMode === 'AUTO' && attResult.action === 'CHECK_IN');
       const speechMessage = isCheckIn
         ? `Halo ${student.nickname}, presensi masuk kamu berhasil dicatat! Selamat belajar ya!`
         : `Halo ${student.nickname}, presensi pulang kamu berhasil dicatat! Hati-hati di jalan ya!`;
 
-      const responseObj: VerifyFrameResponse = {
-        status: 'MATCHED',
-        student: pendingMatch.student,
-        confidence: pendingMatch.confidence,
-        attendance_status: attResult.status,
-        time: attResult.record.time_in || attResult.record.time_out,
-        time_in: attResult.record.time_in,
-        time_out: attResult.record.time_out,
-        message: attResult.message,
-        bounding_box: null,
-      };
+      if (attResult.record) {
+        const responseObj: VerifyFrameResponse = {
+          status: 'MATCHED',
+          student: pendingMatch.student,
+          confidence: pendingMatch.confidence,
+          attendance_status: attResult.status,
+          time: attResult.record.time_in || attResult.record.time_out,
+          time_in: attResult.record.time_in,
+          time_out: attResult.record.time_out,
+          message: attResult.message,
+          bounding_box: null,
+        };
 
-      audioFeedback.playCelebrationChime();
-      audioFeedback.speakText(speechMessage);
-      onVerified(responseObj);
+        audioFeedback.playCelebrationChime();
+        audioFeedback.speakText(speechMessage);
+        onVerified(responseObj);
+      }
 
       setPendingMatch(null);
+      setWarningAlertMsg(null);
     } catch (err) {
       console.warn('Confirm attendance error:', err);
     } finally {
       setIsSubmittingAttendance(false);
     }
   };
+
 
 
   const handleCancelPendingMatch = () => {
@@ -447,6 +477,21 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
   const handleConfirmManualAttendance = async () => {
     if (!selectedManualStudent) return;
 
+
+    // VALIDATION: If manual mode choice is OUT, check if student checked in today
+    if (manualModeChoice === 'OUT') {
+      const todayList = db.getAttendances(new Date().toISOString().split('T')[0]);
+      const currentTodayRecord = todayList.find(a => a.student_id === selectedManualStudent.id);
+
+      if (!currentTodayRecord || !currentTodayRecord.time_in) {
+        const alertMsg = `Siswa ${selectedManualStudent.nickname} belum ada absen masuk hari ini. Silakan pilih Presensi Masuk (Pagi) terlebih dahulu ya!`;
+        setManualAiMessage(alertMsg);
+        audioFeedback.speakText(alertMsg);
+        return;
+      }
+    }
+
+
     try {
       setIsVerifyingManual(true);
       const res = await api.manualOverride({
@@ -455,6 +500,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
         notes: `Presensi Manual (${manualModeChoice === 'IN' ? 'Masuk' : 'Pulang'})`,
         mode: manualModeChoice,
       });
+
 
       const responseObj: VerifyFrameResponse = {
         status: 'MATCHED',
@@ -695,6 +741,14 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                 </div>
               </div>
 
+              {/* Warning Alert Banner if student tries to check out without checking in */}
+              {warningAlertMsg && (
+                <div className="p-3 rounded-2xl bg-amber-950/90 border-2 border-amber-500/80 text-amber-200 text-xs font-bold flex items-center gap-2.5 animate-fadeIn shadow-lg">
+                  <ShieldAlert className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                  <span>{warningAlertMsg}</span>
+                </div>
+              )}
+
               {/* Action Buttons: Hadir Masuk vs Hadir Pulang */}
               <div className="flex items-center gap-2 pt-2 border-t border-slate-800 flex-wrap">
                 <button
@@ -722,6 +776,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                 <button
                   onClick={() => handleConfirmAttendance('OUT')}
                   disabled={isSubmittingAttendance || isAlreadyCheckedOut}
+                  title={!isAlreadyCheckedIn ? 'Siswa belum ada absen masuk hari ini' : 'Klik untuk presensi pulang'}
                   className={`flex-1 py-3 rounded-2xl font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-lg transition transform active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed ${isAlreadyCheckedIn && !isAlreadyCheckedOut
                       ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-amber-500/30'
                       : 'bg-slate-800 text-slate-400'
@@ -734,6 +789,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
             </div>
           </div>
         )}
+
 
         {/* Bottom Helper Bar (When No Pending Match) */}
         {!pendingMatch && (

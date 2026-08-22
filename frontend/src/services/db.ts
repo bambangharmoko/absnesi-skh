@@ -286,10 +286,10 @@ class DatabaseService {
     capturedPhoto?: string | null,
     mode: 'IN' | 'OUT' | 'AUTO' = 'AUTO'
   ): Promise<{
-    status: 'RECORDED_SUCCESS' | 'RECORDED_CHECKOUT_SUCCESS' | 'ALREADY_RECORDED';
+    status: 'RECORDED_SUCCESS' | 'RECORDED_CHECKOUT_SUCCESS' | 'ALREADY_RECORDED' | 'NOT_CHECKED_IN';
     action: 'CHECK_IN' | 'CHECK_OUT' | 'NONE';
     message: string;
-    record: AttendanceRecord;
+    record?: AttendanceRecord;
   }> {
     const now = new Date();
     const todayStr = now.toISOString().split('T')[0];
@@ -300,68 +300,45 @@ class DatabaseService {
 
     // MODE CHECK-OUT / PULANG
     if (mode === 'OUT' || (mode === 'AUTO' && existing && existing.time_in && !existing.time_out)) {
-      if (existing) {
-        if (existing.time_out) {
-          return {
-            status: 'ALREADY_RECORDED',
-            action: 'NONE',
-            message: `Halo ${student.nickname}, kamu sudah presensi pulang pada pukul ${existing.time_out}.`,
-            record: existing,
-          };
-        }
-
-        existing.time_out = timeStr;
-        existing.captured_photo_out = capturedPhoto || null;
-        existing.notes = (existing.notes ? existing.notes + ' • ' : '') + `Pulang: ${timeStr}`;
-
-        localStorage.setItem(this.attendancesKey, JSON.stringify(allAttendances));
-
-        if (supabase) {
-          try {
-            await supabase.from('attendances').update({
-              time_out: existing.time_out,
-              notes: existing.notes,
-            }).eq('id', existing.id);
-          } catch (e) {}
-        }
-
+      // RULE: Jika siswa belum absen masuk, tolak aksi presensi pulang!
+      if (!existing || !existing.time_in) {
         return {
-          status: 'RECORDED_CHECKOUT_SUCCESS',
-          action: 'CHECK_OUT',
-          message: `Presensi pulang berhasil! Selamat beristirahat dan hati-hati di jalan, ${student.nickname}! 👋`,
-          record: existing,
-        };
-      } else {
-        // Direct Checkout without prior Check-in
-        const newRecord: AttendanceRecord = {
-          id: crypto.randomUUID(),
-          student_id: student.id,
-          student_name: student.full_name,
-          student_nickname: student.nickname,
-          student_nis: student.nis,
-          class_name: student.class_name,
-          category: student.category,
-          date: todayStr,
-          time_in: null,
-          time_out: timeStr,
-          status: 'HADIR',
-          confidence_score: confidence,
-          verification_method: 'FACE_RECOGNITION',
-          captured_photo_out: capturedPhoto || null,
-          notes: `Presensi Langsung Pulang: ${timeStr}`,
-          created_at: now.toISOString(),
-        };
-
-        allAttendances.unshift(newRecord);
-        localStorage.setItem(this.attendancesKey, JSON.stringify(allAttendances));
-
-        return {
-          status: 'RECORDED_CHECKOUT_SUCCESS',
-          action: 'CHECK_OUT',
-          message: `Presensi pulang berhasil! Hati-hati di jalan, ${student.nickname}! 👋`,
-          record: newRecord,
+          status: 'NOT_CHECKED_IN',
+          action: 'NONE',
+          message: `Siswa ${student.nickname} belum ada absen masuk hari ini. Silakan klik tombol Masuk terlebih dahulu ya!`,
         };
       }
+
+      if (existing.time_out) {
+        return {
+          status: 'ALREADY_RECORDED',
+          action: 'NONE',
+          message: `Halo ${student.nickname}, kamu sudah presensi pulang pada pukul ${existing.time_out}.`,
+          record: existing,
+        };
+      }
+
+      existing.time_out = timeStr;
+      existing.captured_photo_out = capturedPhoto || null;
+      existing.notes = (existing.notes ? existing.notes + ' • ' : '') + `Pulang: ${timeStr}`;
+
+      localStorage.setItem(this.attendancesKey, JSON.stringify(allAttendances));
+
+      if (supabase) {
+        try {
+          await supabase.from('attendances').update({
+            time_out: existing.time_out,
+            notes: existing.notes,
+          }).eq('id', existing.id);
+        } catch (e) {}
+      }
+
+      return {
+        status: 'RECORDED_CHECKOUT_SUCCESS',
+        action: 'CHECK_OUT',
+        message: `Presensi pulang berhasil! Selamat beristirahat dan hati-hati di jalan, ${student.nickname}! 👋`,
+        record: existing,
+      };
     }
 
     // MODE CHECK-IN / MASUK
