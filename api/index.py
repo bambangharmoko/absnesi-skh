@@ -2,7 +2,6 @@ import sys
 import os
 from pathlib import Path
 
-# Add project root and backend dir to sys.path
 root_dir = Path(__file__).resolve().parent.parent
 backend_dir = root_dir / "backend"
 
@@ -12,6 +11,11 @@ for p in [str(root_dir), str(backend_dir), str(Path.cwd()), str(Path.cwd() / "ba
 
 try:
     from backend.app.main import app
+    try:
+        from mangum import Mangum
+        handler = Mangum(app, lifespan="off")
+    except Exception:
+        handler = app
 except Exception as e:
     import traceback
     traceback.print_exc()
@@ -26,5 +30,10 @@ except Exception as e:
             status_code=500,
             content={"detail": err_str}
         )
+    try:
+        from mangum import Mangum
+        handler = Mangum(app, lifespan="off")
+    except Exception:
+        handler = app
 
-__all__ = ["app"]
+__all__ = ["app", "handler"]
