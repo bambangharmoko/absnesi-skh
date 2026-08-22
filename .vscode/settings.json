@@ -1,14 +1,17 @@
 {
-  "python.defaultInterpreterPath": "${workspaceFolder}/backend/python/python.exe",
+  "python.defaultInterpreterPath": "c:\\beng\\Absensi-SKH\\backend\\python\\python.exe",
   "python.analysis.extraPaths": [
-    "${workspaceFolder}",
-    "${workspaceFolder}/backend",
-    "${workspaceFolder}/backend/python/Lib/site-packages"
+    "c:\\beng\\Absensi-SKH",
+    "c:\\beng\\Absensi-SKH\\backend",
+    "c:\\beng\\Absensi-SKH\\backend\\python\\Lib\\site-packages"
   ],
   "python.autoComplete.extraPaths": [
-    "${workspaceFolder}",
-    "${workspaceFolder}/backend",
-    "${workspaceFolder}/backend/python/Lib/site-packages"
+    "c:\\beng\\Absensi-SKH",
+    "c:\\beng\\Absensi-SKH\\backend",
+    "c:\\beng\\Absensi-SKH\\backend\\python\\Lib\\site-packages"
   ],
+  "python.analysis.diagnosticSeverityOverrides": {
+    "reportMissingImports": "none"
+  },
   "typescript.tsdk": "frontend/node_modules/typescript/lib"
 }
