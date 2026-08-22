@@ -92,10 +92,11 @@ async def enroll_student_face(
     if not nis_clean or not full_name_clean or not nickname_clean:
         raise HTTPException(status_code=422, detail="NIS, Nama Lengkap, dan Nama Panggilan wajib diisi.")
 
-    # 1. Find or create student
+    # 1. Find or create student with explicit UUID
     student = db.query(Student).filter(Student.nis == nis_clean).first()
     if not student:
         student = Student(
+            id=str(uuid.uuid4()),
             nis=nis_clean,
             full_name=full_name_clean,
             nickname=nickname_clean,
@@ -156,8 +157,9 @@ async def enroll_student_face(
             except Exception as write_err:
                 print(f"Notice saving student photo: {write_err}")
 
-            # Save embedding record to database
+            # Save embedding record to database with explicit UUID
             face_emb = FaceEmbedding(
+                id=str(uuid.uuid4()),
                 student_id=student.id,
                 embedding_vector=json.dumps(emb_vec.tolist()),
                 photo_path=filename,
@@ -177,6 +179,7 @@ async def enroll_student_face(
     if len(extracted_vectors) > 1:
         centroid = face_embedder.compute_centroid(extracted_vectors)
         centroid_record = FaceEmbedding(
+            id=str(uuid.uuid4()),
             student_id=student.id,
             embedding_vector=json.dumps(centroid.tolist()),
             photo_path=saved_embeddings[0].photo_path if saved_embeddings else None,

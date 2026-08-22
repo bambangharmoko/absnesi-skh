@@ -97,6 +97,7 @@ class AttendanceService:
                 print(f"Failed to save snapshot photo: {e}")
 
         new_attendance = Attendance(
+            id=str(uuid.uuid4()),
             student_id=student.id,
             date=today_str,
             time_in=time_str,
