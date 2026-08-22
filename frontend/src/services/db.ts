@@ -66,8 +66,13 @@ class DatabaseService {
       }
     }
 
+    // Clean any old dummy test students
     existingList = existingList.filter(
-      s => s.nis !== 'SKH-TEST-001' && s.nis !== 'SKH-2026-TEST-999' && !s.full_name.includes('Test Student') && !s.full_name.includes('Ahmad Fauzi')
+      s =>
+        s.nis !== 'SKH-TEST-001' &&
+        s.nis !== 'SKH-2026-TEST-999' &&
+        !s.full_name.includes('Test Student') &&
+        !s.full_name.includes('Ahmad Fauzi')
     );
 
     const currentRaw = localStorage.getItem(this.studentsKey);
@@ -77,11 +82,37 @@ class DatabaseService {
       try {
         let currentList: StudentRecord[] = JSON.parse(currentRaw);
         currentList = currentList.filter(
-          s => s.nis !== 'SKH-TEST-001' && s.nis !== 'SKH-2026-TEST-999' && !s.full_name.includes('Test Student') && !s.full_name.includes('Ahmad Fauzi')
+          s =>
+            s.nis !== 'SKH-TEST-001' &&
+            s.nis !== 'SKH-2026-TEST-999' &&
+            !s.full_name.includes('Test Student') &&
+            !s.full_name.includes('Ahmad Fauzi')
         );
         localStorage.setItem(this.studentsKey, JSON.stringify(currentList));
       } catch (e) {}
     }
+
+    // PURGE ORPHAN ATTENDANCE RECORDS (belonging to non-existent students)
+    this.purgeOrphanAttendances();
+  }
+
+  private purgeOrphanAttendances() {
+    const validStudents = this.getRawStudents();
+    const validIds = new Set(validStudents.map(s => s.id));
+
+    const rawAtt = localStorage.getItem(this.attendancesKey);
+    if (rawAtt) {
+      try {
+        const attList: AttendanceRecord[] = JSON.parse(rawAtt);
+        const cleaned = attList.filter(a => validIds.has(a.student_id));
+        localStorage.setItem(this.attendancesKey, JSON.stringify(cleaned));
+      } catch (e) {}
+    }
+  }
+
+  private getRawStudents(): StudentRecord[] {
+    const raw = localStorage.getItem(this.studentsKey);
+    return raw ? JSON.parse(raw) : [];
   }
 
   /**
@@ -94,7 +125,7 @@ class DatabaseService {
         .from('students')
         .select('*, face_embeddings(*)');
 
-      if (!sErr && studentsData && studentsData.length > 0) {
+      if (!sErr && studentsData) {
         const mapped: StudentRecord[] = studentsData.map(s => ({
           id: s.id,
           nis: s.nis,
@@ -106,20 +137,23 @@ class DatabaseService {
           created_at: s.created_at,
           photo_count: s.face_embeddings ? s.face_embeddings.length : 0,
           latest_photo: s.face_embeddings && s.face_embeddings.length > 0 ? s.face_embeddings[0].photo_path : null,
-          embeddings: (s.face_embeddings || []).map((e: { id: string; pose_label: string; photo_path: string; embedding_vector: string }) => {
-            let vec: number[] = [];
-            try {
-              vec = JSON.parse(e.embedding_vector);
-            } catch {}
-            return {
-              id: e.id,
-              pose_label: e.pose_label,
-              photo_data: e.photo_path || '',
-              vector: vec,
-            };
-          }),
+          embeddings: (s.face_embeddings || []).map(
+            (e: { id: string; pose_label: string; photo_path: string; embedding_vector: string }) => {
+              let vec: number[] = [];
+              try {
+                vec = JSON.parse(e.embedding_vector);
+              } catch {}
+              return {
+                id: e.id,
+                pose_label: e.pose_label,
+                photo_data: e.photo_path || '',
+                vector: vec,
+              };
+            }
+          ),
         }));
         localStorage.setItem(this.studentsKey, JSON.stringify(mapped));
+        this.purgeOrphanAttendances();
         console.log(`[Database] Synced ${mapped.length} real students from Supabase.`);
       }
     } catch (e) {
@@ -240,8 +274,19 @@ class DatabaseService {
     list = list.filter(s => s.id !== id);
     localStorage.setItem(this.studentsKey, JSON.stringify(list));
 
+    // CASCADE DELETE: Remove all attendance records associated with this student
+    const rawAtt = localStorage.getItem(this.attendancesKey);
+    if (rawAtt) {
+      try {
+        let attList: AttendanceRecord[] = JSON.parse(rawAtt);
+        attList = attList.filter(a => a.student_id !== id);
+        localStorage.setItem(this.attendancesKey, JSON.stringify(attList));
+      } catch (e) {}
+    }
+
     if (supabase) {
       try {
+        await supabase.from('attendances').delete().eq('student_id', id);
         await supabase.from('students').delete().eq('id', id);
       } catch (e) {
         console.warn('[Database] Supabase delete notice:', e);
@@ -257,6 +302,11 @@ class DatabaseService {
   getAttendances(date?: string, className?: string, status?: string): AttendanceRecord[] {
     const raw = localStorage.getItem(this.attendancesKey);
     let list: AttendanceRecord[] = raw ? JSON.parse(raw) : [];
+
+    // ONLY INCLUDE ATTENDANCES FOR STUDENTS WHO ACTUALLY EXIST
+    const validStudents = this.getStudents();
+    const validStudentIds = new Set(validStudents.map(s => s.id));
+    list = list.filter(a => validStudentIds.has(a.student_id));
 
     if (date) {
       list = list.filter(a => a.date === date);
@@ -288,7 +338,6 @@ class DatabaseService {
     }
     return true;
   }
-
 
   async recordAttendance(
     student: {
@@ -343,10 +392,13 @@ class DatabaseService {
 
       if (supabase) {
         try {
-          await supabase.from('attendances').update({
-            time_out: existing.time_out,
-            notes: existing.notes,
-          }).eq('id', existing.id);
+          await supabase
+            .from('attendances')
+            .update({
+              time_out: existing.time_out,
+              notes: existing.notes,
+            })
+            .eq('id', existing.id);
         } catch (e) {}
       }
 
@@ -421,12 +473,24 @@ class DatabaseService {
     };
   }
 
-  getStats(date?: string) {
+  getStats(date?: string, className?: string) {
     const todayStr = date || new Date().toISOString().split('T')[0];
-    const students = this.getStudents();
-    const attendances = this.getAttendances(todayStr);
+    const students = this.getStudents(className);
+    const attendances = this.getAttendances(todayStr, className);
 
     const totalStudents = students.length;
+    if (totalStudents === 0) {
+      return {
+        total_students: 0,
+        present_count: 0,
+        ontime_count: 0,
+        late_count: 0,
+        checkout_count: 0,
+        attendance_rate: 0,
+        date: todayStr,
+      };
+    }
+
     const hadir = attendances.filter(a => a.time_in && a.status === 'HADIR').length;
     const terlambat = attendances.filter(a => a.status === 'TERLAMBAT').length;
     const pulang = attendances.filter(a => a.time_out !== null && a.time_out !== undefined).length;

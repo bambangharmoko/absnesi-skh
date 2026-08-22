@@ -220,7 +220,7 @@ export const api = {
   },
 
   async getAttendanceSummary(className?: string, dateStr?: string): Promise<AttendanceSummary> {
-    const stats = db.getStats(dateStr);
+    const stats = db.getStats(dateStr, className);
     return {
       total_students: stats.total_students,
       total_present: stats.present_count,
@@ -232,6 +232,7 @@ export const api = {
       attendance_rate: stats.attendance_rate,
     };
   },
+
 
   async manualOverride(data: { student_id: string; status: string; notes?: string; date?: string; mode?: 'IN' | 'OUT' | 'AUTO' }): Promise<AttendanceRecord> {
     const student = db.getStudentById(data.student_id);
