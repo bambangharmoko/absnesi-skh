@@ -250,7 +250,15 @@ export const api = {
       null,
       data.mode || 'AUTO'
     );
-    return result.record;
+    return result.record!;
+  },
+
+  async deleteAttendance(attendanceId: string): Promise<{ status: string; message: string }> {
+    await db.deleteAttendance(attendanceId);
+    return {
+      status: 'SUCCESS',
+      message: 'Data presensi berhasil dihapus.',
+    };
   },
 
   // Export Excel directly in TypeScript
@@ -264,3 +272,4 @@ export const api = {
     db.exportExcel(date, className);
   },
 };
+

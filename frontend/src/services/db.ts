@@ -273,6 +273,23 @@ class DatabaseService {
     return list.sort((a, b) => b.created_at.localeCompare(a.created_at));
   }
 
+  async deleteAttendance(id: string): Promise<boolean> {
+    const raw = localStorage.getItem(this.attendancesKey);
+    let list: AttendanceRecord[] = raw ? JSON.parse(raw) : [];
+    list = list.filter(a => a.id !== id);
+    localStorage.setItem(this.attendancesKey, JSON.stringify(list));
+
+    if (supabase) {
+      try {
+        await supabase.from('attendances').delete().eq('id', id);
+      } catch (e) {
+        console.warn('[Database] Supabase attendance delete notice:', e);
+      }
+    }
+    return true;
+  }
+
+
   async recordAttendance(
     student: {
       id: string;

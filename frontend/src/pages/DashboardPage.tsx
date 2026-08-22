@@ -53,6 +53,15 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
     }
   };
 
+  const handleDeleteAttendance = async (attendanceId: string) => {
+    try {
+      await api.deleteAttendance(attendanceId);
+      await fetchData();
+    } catch (err) {
+      console.warn('Failed to delete attendance record:', err);
+    }
+  };
+
   const classTabs = [
     { id: 'all', label: 'Semua Kelas' },
     { id: 'Kelas 1 Autis', label: 'Kelas 1 Autis' },
@@ -124,49 +133,48 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
           <div className="text-2xl sm:text-3xl font-black text-white">
             {summary ? summary.total_students : 0}
           </div>
-          <div className="text-[11px] text-slate-400 mt-1">Siswa Aktif Terdaftar</div>
+          <div className="text-[11px] text-slate-400 mt-1">Terdaftar di sistem</div>
         </div>
 
-        {/* Present Today */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-emerald-950/40 via-slate-900 to-slate-900 border border-emerald-500/30 relative overflow-hidden">
-          <div className="flex items-center justify-between text-emerald-400 mb-2">
-            <span className="text-xs font-semibold uppercase tracking-wider">Hadir Tepat Waktu</span>
+        {/* Hadir Tepat Waktu */}
+        <div className="p-4 sm:p-5 rounded-2xl glass-panel border border-emerald-500/20 relative overflow-hidden">
+          <div className="flex items-center justify-between text-slate-400 mb-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-emerald-400">Hadir Tepat Waktu</span>
             <UserCheck className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="text-2xl sm:text-3xl font-black text-emerald-400">
             {summary ? summary.total_present : 0}
           </div>
-          <div className="text-[11px] text-emerald-200/70 mt-1">Sebelum 07:30 WIB</div>
+          <div className="text-[11px] text-slate-400 mt-1">Tiba sebelum 07:30 WIB</div>
         </div>
 
-        {/* Late */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-amber-950/40 via-slate-900 to-slate-900 border border-amber-500/30 relative overflow-hidden">
-          <div className="flex items-center justify-between text-amber-400 mb-2">
-            <span className="text-xs font-semibold uppercase tracking-wider">Terlambat</span>
+        {/* Terlambat */}
+        <div className="p-4 sm:p-5 rounded-2xl glass-panel border border-amber-500/20 relative overflow-hidden">
+          <div className="flex items-center justify-between text-slate-400 mb-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-amber-400">Terlambat</span>
             <AlertTriangle className="w-4 h-4 text-amber-400" />
           </div>
           <div className="text-2xl sm:text-3xl font-black text-amber-400">
             {summary ? summary.total_late : 0}
           </div>
-          <div className="text-[11px] text-amber-200/70 mt-1">Setelah 07:30 WIB</div>
+          <div className="text-[11px] text-slate-400 mt-1">Tiba lewat 07:30 WIB</div>
         </div>
 
-        {/* Permission / Sick */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-blue-950/40 via-slate-900 to-slate-900 border border-blue-500/30 relative overflow-hidden">
-          <div className="flex items-center justify-between text-blue-400 mb-2">
-            <span className="text-xs font-semibold uppercase tracking-wider">Izin & Sakit</span>
-            <ShieldCheck className="w-4 h-4 text-blue-400" />
+
+        {/* Sudah Pulang */}
+        <div className="p-4 sm:p-5 rounded-2xl glass-panel border border-teal-500/20 relative overflow-hidden">
+          <div className="flex items-center justify-between text-slate-400 mb-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-teal-400">Sudah Pulang</span>
+            <ShieldCheck className="w-4 h-4 text-teal-400" />
           </div>
-          <div className="text-2xl sm:text-3xl font-black text-blue-400">
-            {summary ? summary.total_permission + summary.total_sick : 0}
+          <div className="text-2xl sm:text-3xl font-black text-teal-400">
+            {summary ? summary.checkout_count : 0}
           </div>
-          <div className="text-[11px] text-blue-200/70 mt-1">
-            Izin ({summary?.total_permission || 0}) • Sakit ({summary?.total_sick || 0})
-          </div>
+          <div className="text-[11px] text-slate-400 mt-1">Presensi kepulangan</div>
         </div>
 
-        {/* Absent / Rate */}
-        <div className="col-span-2 sm:col-span-1 p-4 sm:p-5 rounded-2xl bg-slate-900 border border-slate-800 relative overflow-hidden">
+        {/* Belum Hadir / Persentase */}
+        <div className="p-4 sm:p-5 rounded-2xl glass-panel border border-slate-800 relative overflow-hidden">
           <div className="flex items-center justify-between text-slate-400 mb-2">
             <span className="text-xs font-semibold uppercase tracking-wider">Kehadiran</span>
             <span className="text-xs font-bold text-emerald-400">{summary?.attendance_rate || 0}%</span>
@@ -191,6 +199,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
             records={todayRecords}
             allStudents={students}
             onOpenOverride={handleOpenOverride}
+            onDeleteAttendance={handleDeleteAttendance}
           />
         </div>
       </div>
