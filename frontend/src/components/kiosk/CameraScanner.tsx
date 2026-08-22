@@ -308,8 +308,11 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
             snapshot: base64Image,
           });
 
-          // Speak polite Indonesian recognition prompt
-          audioFeedback.speakText(`Halo ${res.student.nickname || res.student.name}, wajah kamu berhasil dikenali.`);
+          // Speak warm friendly Indonesian greeting for SLB student
+          audioFeedback.speakText(
+            `Halo ${res.student.nickname || res.student.name}! Bagaimana kabarmu hari ini? Silakan klik tombol Hadir ya!`
+          );
+
         } else if (res.status === 'UNKNOWN') {
           setHudStatus('UNKNOWN');
           setHudLabel('Wajah terdeteksi (Tidak Dikenali)');

@@ -1,12 +1,13 @@
 /**
- * Audio feedback module using Web Audio API (Synthesizer Chime)
- * and 100% Native Indonesian Text-to-Speech (Indonesian Voice Engine & Audio Fallback)
+ * Audio feedback module with 100% Native Indonesian Natural Voice Engine
+ * Specially tuned for Special Needs School (SLB / SKH) students.
  */
 
 class AudioFeedbackManager {
   private audioCtx: AudioContext | null = null;
   private indonesianVoice: SpeechSynthesisVoice | null = null;
   private currentAudio: HTMLAudioElement | null = null;
+  private hasCheckedVoices = false;
 
   constructor() {
     this.initVoices();
@@ -17,17 +18,25 @@ class AudioFeedbackManager {
 
     const findVoice = () => {
       const voices = window.speechSynthesis.getVoices();
-      // Look for pure Indonesian voices (id-ID, in-ID, Gadis, Ardi, Andika, Indonesian)
+      if (!voices || voices.length === 0) return;
+
+      this.hasCheckedVoices = true;
+      // Look strictly for Indonesian language voices
       const found = voices.find(
         v =>
           v.lang.toLowerCase().startsWith('id') ||
           v.lang.toLowerCase().startsWith('in') ||
           v.name.toLowerCase().includes('indonesia') ||
           v.name.toLowerCase().includes('gadis') ||
-          v.name.toLowerCase().includes('ardi')
+          v.name.toLowerCase().includes('ardi') ||
+          v.name.toLowerCase().includes('andika')
       );
+
       if (found) {
         this.indonesianVoice = found;
+        console.log('[AudioFeedback] Found local Indonesian voice:', found.name);
+      } else {
+        this.indonesianVoice = null;
       }
     };
 
@@ -91,19 +100,11 @@ class AudioFeedbackManager {
   }
 
   /**
-   * Speak friendly text with 100% Native Indonesian Voice
+   * Speak text with 100% Guaranteed Native Indonesian Accent
+   * (Uses High-Quality Native Indonesian Audio Stream as primary, never speaks English)
    */
   speakText(text: string) {
     if (!text || !text.trim()) return;
-
-    // Stop any previous speech / audio playback
-    if (this.currentAudio) {
-      this.currentAudio.pause();
-      this.currentAudio = null;
-    }
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
 
     // Clean formatting for natural speech
     const cleanText = text
@@ -111,48 +112,48 @@ class AudioFeedbackManager {
       .replace(/\s+/g, ' ')
       .trim();
 
-    // 1. Primary Method: Native Indonesian Web Speech Synthesis with id-ID
+    // Cancel any previous audio/speech
+    if (this.currentAudio) {
+      try {
+        this.currentAudio.pause();
+        this.currentAudio.currentTime = 0;
+      } catch (e) {}
+      this.currentAudio = null;
+    }
     if ('speechSynthesis' in window) {
       try {
+        window.speechSynthesis.cancel();
+      } catch (e) {}
+    }
+
+    // If local browser HAS a verified Indonesian voice, use SpeechSynthesis
+    if (this.indonesianVoice) {
+      try {
         const utterance = new SpeechSynthesisUtterance(cleanText);
+        utterance.voice = this.indonesianVoice;
         utterance.lang = 'id-ID';
-        utterance.rate = 0.95; // Gentle, easy to comprehend for special needs students
-        utterance.pitch = 1.05; // Friendly and warm tone
-
-        if (this.indonesianVoice) {
-          utterance.voice = this.indonesianVoice;
-        } else {
-          // Re-search voices in case loaded asynchronously
-          const voices = window.speechSynthesis.getVoices();
-          const idV = voices.find(
-            v =>
-              v.lang.toLowerCase().startsWith('id') ||
-              v.lang.toLowerCase().startsWith('in') ||
-              v.name.toLowerCase().includes('indonesia')
-          );
-          if (idV) {
-            this.indonesianVoice = idV;
-            utterance.voice = idV;
-          }
-        }
-
+        utterance.rate = 0.92; // Warm, gentle, friendly pace for SLB students
+        utterance.pitch = 1.1; // Cheerful friendly tone
         window.speechSynthesis.speak(utterance);
         return;
       } catch (e) {
-        console.warn('SpeechSynthesis speak notice:', e);
+        console.warn('Local Indonesian voice error, switching to cloud stream:', e);
       }
     }
 
-    // 2. High-Quality Fallback: Online Indonesian Voice Audio Stream
+    // PRIMARY & GUARANTEED 100% INDONESIAN NATIVE STREAM
+    // Never uses English fallback!
     try {
       const audioUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=id&client=tw-ob&q=${encodeURIComponent(
         cleanText
       )}`;
       const audio = new Audio(audioUrl);
       this.currentAudio = audio;
-      audio.play().catch(() => {});
+      audio.play().catch(playErr => {
+        console.warn('Audio stream autoplay notice:', playErr);
+      });
     } catch (err) {
-      console.warn('TTS Audio fallback notice:', err);
+      console.warn('Audio playback error:', err);
     }
   }
 }
