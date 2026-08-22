@@ -13,14 +13,31 @@ import {
   Check,
   ChevronRight,
   HelpCircle,
+  ThumbsUp,
+  RotateCcw,
 } from 'lucide-react';
 import { api, VerifyFrameResponse, Student } from '../../services/api';
+import { db } from '../../services/db';
 import { audioFeedback } from './AudioFeedback';
 
 interface CameraScannerProps {
   onVerified: (response: VerifyFrameResponse) => void;
   selectedClass?: string;
   isPaused?: boolean;
+}
+
+interface PendingMatch {
+  student: {
+    id: string;
+    nis: string;
+    name: string;
+    nickname: string;
+    class_name: string;
+    category: string;
+    photo_url?: string | null;
+  };
+  confidence: number;
+  snapshot: string;
 }
 
 export const CameraScanner: React.FC<CameraScannerProps> = ({
@@ -40,7 +57,10 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
   const [hudLabel, setHudLabel] = useState<string>('Mencari wajah siswa di depan kamera...');
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [enrolledStudents, setEnrolledStudents] = useState<Student[]>([]);
-  const [lastVerifiedId, setLastVerifiedId] = useState<string | null>(null);
+
+  // Verification Step: Student Detected Confirmation State
+  const [pendingMatch, setPendingMatch] = useState<PendingMatch | null>(null);
+  const [isSubmittingAttendance, setIsSubmittingAttendance] = useState<boolean>(false);
 
   // Manual Attendance Modal States
   const [showManualModal, setShowManualModal] = useState<boolean>(false);
@@ -169,7 +189,6 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       if (!bbox) {
-        // Draw searching target circle
         const cx = canvas.width / 2;
         const cy = canvas.height / 2;
         const size = Math.min(canvas.width, canvas.height) * 0.45;
@@ -196,42 +215,37 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
       }
 
       const { x, y, w, h } = bbox;
-
       const cornerLen = Math.min(w, h) * 0.25;
       ctx.strokeStyle = strokeColor;
       ctx.lineWidth = 4;
       ctx.fillStyle = bgColor;
       ctx.fillRect(x, y, w, h);
 
-      // Top-Left
+      // Corners
       ctx.beginPath();
       ctx.moveTo(x, y + cornerLen);
       ctx.lineTo(x, y);
       ctx.lineTo(x + cornerLen, y);
       ctx.stroke();
 
-      // Top-Right
       ctx.beginPath();
       ctx.moveTo(x + w - cornerLen, y);
       ctx.lineTo(x + w, y);
       ctx.lineTo(x + w, y + cornerLen);
       ctx.stroke();
 
-      // Bottom-Left
       ctx.beginPath();
       ctx.moveTo(x, y + h - cornerLen);
       ctx.lineTo(x, y + h);
       ctx.lineTo(x + cornerLen, y + h);
       ctx.stroke();
 
-      // Bottom-Right
       ctx.beginPath();
       ctx.moveTo(x + w - cornerLen, y + h);
       ctx.lineTo(x + w, y + h);
-      ctx.lineTo(x + w, y + h - cornerLen);
+      ctx.lineTo(x + w, y + cornerLen);
       ctx.stroke();
 
-      // Name Label Tag
       if (name) {
         ctx.fillStyle = strokeColor;
         ctx.fillRect(x, Math.max(0, y - 34), w, 34);
@@ -249,12 +263,12 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
     []
   );
 
-  // Continuous Frame Capture & Recognition Loop
+  // Continuous Frame Detection Loop
   useEffect(() => {
-    if (isPaused || showManualModal) return;
+    if (isPaused || showManualModal || pendingMatch !== null) return;
 
     const interval = setInterval(async () => {
-      if (isProcessing || isPaused || showManualModal) return;
+      if (isProcessing || isPaused || showManualModal || pendingMatch !== null) return;
 
       const video = videoRef.current;
       const canvas = canvasRef.current;
@@ -275,16 +289,15 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
 
         if (res.status === 'MATCHED' && res.student) {
           setHudStatus('MATCHED');
-          setHudLabel(`Terverifikasi: ${res.student.name} (${Math.round(res.confidence * 100)}%)`);
+          setHudLabel(`Wajah Cocok: ${res.student.name} (${Math.round(res.confidence * 100)}%)`);
           drawHud(res.bounding_box || null, 'MATCHED', res.student.name);
 
-          if (lastVerifiedId !== res.student.id) {
-            setLastVerifiedId(res.student.id);
-            audioFeedback.playCelebrationChime();
-            audioFeedback.speakText(res.message);
-            onVerified(res);
-            setTimeout(() => setLastVerifiedId(null), 5000);
-          }
+          // Prompt Verification First (do not save attendance immediately)
+          setPendingMatch({
+            student: res.student,
+            confidence: res.confidence,
+            snapshot: base64Image,
+          });
         } else if (res.status === 'UNKNOWN') {
           setHudStatus('UNKNOWN');
           setHudLabel('Wajah terdeteksi (Tidak Dikenali)');
@@ -302,7 +315,59 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
     }, 400);
 
     return () => clearInterval(interval);
-  }, [isPaused, isProcessing, selectedClass, onVerified, drawHud, lastVerifiedId, showManualModal]);
+  }, [isPaused, isProcessing, selectedClass, drawHud, showManualModal, pendingMatch]);
+
+  // ==========================================
+  // CONFIRM ATTENDANCE BUTTON HANDLER
+  // ==========================================
+
+  const handleConfirmAttendance = async () => {
+    if (!pendingMatch) return;
+    setIsSubmittingAttendance(true);
+
+    try {
+      const student = pendingMatch.student;
+      const attResult = await db.recordAttendance(
+        {
+          id: student.id,
+          nis: student.nis,
+          full_name: student.name,
+          nickname: student.nickname,
+          class_name: student.class_name,
+          category: student.category,
+        },
+        pendingMatch.confidence,
+        pendingMatch.snapshot
+      );
+
+      const responseObj: VerifyFrameResponse = {
+        status: 'MATCHED',
+        student: pendingMatch.student,
+        confidence: pendingMatch.confidence,
+        attendance_status: attResult.status,
+        time: attResult.record.time_in,
+        message: attResult.message,
+        bounding_box: null,
+      };
+
+      audioFeedback.playCelebrationChime();
+      audioFeedback.speakText(responseObj.message);
+      onVerified(responseObj);
+
+      setPendingMatch(null);
+    } catch (err) {
+      console.warn('Confirm attendance error:', err);
+    } finally {
+      setIsSubmittingAttendance(false);
+    }
+  };
+
+  const handleCancelPendingMatch = () => {
+    setPendingMatch(null);
+    setHudStatus('SEARCHING');
+    setHudLabel('Mencari wajah siswa di depan kamera...');
+    drawHud(null, 'SEARCHING');
+  };
 
   // ==========================================
   // MANUAL ATTENDANCE & PHOTO VERIFICATION
@@ -312,8 +377,8 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
     loadStudents();
     setSelectedManualStudent(null);
     setManualAiMessage(null);
+    setPendingMatch(null);
 
-    // Capture current snapshot from video if active
     const video = videoRef.current;
     const canvas = canvasRef.current;
     let snapshotUrl: string | null = null;
@@ -331,7 +396,6 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
     setCapturedSnapshot(snapshotUrl);
     setShowManualModal(true);
 
-    // Run AI verification on snapshot if available
     if (snapshotUrl) {
       setIsVerifyingManual(true);
       setManualAiMessage('Memindai wajah dari foto snapshot...');
@@ -341,7 +405,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
           const matched = enrolledStudents.find(s => s.id === res.student?.id);
           if (matched) {
             setSelectedManualStudent(matched);
-            setManualAiMessage(`AI Berhasil Mengenali: ${matched.full_name} (${Math.round(res.confidence * 100)}%)`);
+            setManualAiMessage(`AI Mengenali Wajah: ${matched.full_name} (${Math.round(res.confidence * 100)}%)`);
           }
         } else {
           setManualAiMessage('Wajah tidak dikenali otomatis. Silakan pilih nama siswa dari daftar di bawah.');
@@ -431,7 +495,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
         />
 
         {/* Laser Scan Line */}
-        {isStreaming && <div className="scanner-laser z-10" />}
+        {isStreaming && !pendingMatch && <div className="scanner-laser z-10" />}
 
         {/* Fallback Display when Camera is Offline */}
         {!isStreaming && (
@@ -495,7 +559,6 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
               <RefreshCw className="w-4 h-4" />
             </button>
 
-            {/* BUTTON: ABSENSI MANUAL & FOTO */}
             <button
               onClick={handleOpenManualAttendance}
               className="px-4 py-2 rounded-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs sm:text-sm font-bold flex items-center gap-2 shadow-lg shadow-emerald-600/30 transition transform active:scale-95"
@@ -506,20 +569,83 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
           </div>
         </div>
 
-        {/* Bottom Instruction Bar with Fast Action */}
-        <div className="absolute bottom-4 left-4 right-4 pointer-events-none z-30 flex items-center justify-between">
-          <div className="hidden sm:inline-block px-4 py-2 rounded-2xl glass-panel text-xs text-slate-300 shadow-xl border border-slate-700/50">
-            💡 <span className="font-semibold text-emerald-400">Tips:</span> Arahkan wajah ke kamera • Sistem AI memindai otomatis
-          </div>
+        {/* ========================================================= */}
+        {/* INTERACTIVE VERIFICATION OVERLAY CARD: "KONFIRMASI HADIR" */}
+        {/* ========================================================= */}
+        {pendingMatch && (
+          <div className="absolute inset-x-4 bottom-4 z-40 flex justify-center animate-slideUp">
+            <div className="w-full max-w-lg bg-slate-900/95 border-2 border-emerald-500/80 rounded-3xl p-5 shadow-2xl backdrop-blur-xl flex flex-col gap-4">
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 rounded-2xl overflow-hidden bg-slate-800 border-2 border-emerald-400 flex-shrink-0 flex items-center justify-center shadow-lg">
+                  {pendingMatch.student.photo_url ? (
+                    <img
+                      src={pendingMatch.student.photo_url}
+                      alt={pendingMatch.student.nickname}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <span className="text-xl font-black text-emerald-400">
+                      {pendingMatch.student.nickname.charAt(0)}
+                    </span>
+                  )}
+                </div>
 
-          <button
-            onClick={handleOpenManualAttendance}
-            className="pointer-events-auto px-4 py-2 rounded-2xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700 text-xs font-semibold text-slate-200 flex items-center gap-1.5 shadow-lg backdrop-blur-md transition ml-auto"
-          >
-            <HelpCircle className="w-3.5 h-3.5 text-amber-400" />
-            <span>Wajah Tidak Terdeteksi? Klik Absen Manual</span>
-          </button>
-        </div>
+                <div className="flex-1 overflow-hidden">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[11px] font-bold border border-emerald-500/30">
+                      {Math.round(pendingMatch.confidence * 100)}% Wajah Cocok
+                    </span>
+                    <span className="text-xs text-slate-400">{pendingMatch.student.nis}</span>
+                  </div>
+
+                  <h3 className="text-lg font-black text-white truncate mt-1">
+                    {pendingMatch.student.name}
+                  </h3>
+                  <p className="text-xs font-semibold text-emerald-400">
+                    Panggilan: {pendingMatch.student.nickname} • <span className="text-slate-300">{pendingMatch.student.class_name}</span>
+                  </p>
+                </div>
+              </div>
+
+              {/* Action Buttons: Hadir vs Bukan Siswa Ini */}
+              <div className="flex items-center gap-3 pt-2 border-t border-slate-800">
+                <button
+                  onClick={handleCancelPendingMatch}
+                  className="flex-1 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold flex items-center justify-center gap-1.5 transition"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  <span>Bukan Saya</span>
+                </button>
+
+                <button
+                  onClick={handleConfirmAttendance}
+                  disabled={isSubmittingAttendance}
+                  className="flex-[2] py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-sm sm:text-base flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/40 transition transform active:scale-95 disabled:opacity-50"
+                >
+                  <ThumbsUp className="w-5 h-5 fill-current" />
+                  <span>{isSubmittingAttendance ? 'Mencatat Presensi...' : 'KLIK HADIR SEKARANG'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Bottom Helper Bar (When No Pending Match) */}
+        {!pendingMatch && (
+          <div className="absolute bottom-4 left-4 right-4 pointer-events-none z-30 flex items-center justify-between">
+            <div className="hidden sm:inline-block px-4 py-2 rounded-2xl glass-panel text-xs text-slate-300 shadow-xl border border-slate-700/50">
+              💡 <span className="font-semibold text-emerald-400">Tips:</span> Arahkan wajah ke kamera • Klik tombol "Hadir" saat nama Anda muncul
+            </div>
+
+            <button
+              onClick={handleOpenManualAttendance}
+              className="pointer-events-auto px-4 py-2 rounded-2xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700 text-xs font-semibold text-slate-200 flex items-center gap-1.5 shadow-lg backdrop-blur-md transition ml-auto"
+            >
+              <HelpCircle className="w-3.5 h-3.5 text-amber-400" />
+              <span>Wajah Tidak Terdeteksi? Klik Absen Manual</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ========================================== */}
