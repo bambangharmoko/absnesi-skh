@@ -33,12 +33,36 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
     api.getStudents().then(setEnrolledStudents).catch(() => {});
   }, []);
 
-  // Stop Camera
+  const streamRef = useRef<MediaStream | null>(null);
+
+  // Stop Camera & Force Release Hardware Device
   const stopCamera = useCallback(() => {
-    if (videoRef.current && videoRef.current.srcObject) {
-      const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
-      tracks.forEach(track => track.stop());
-      videoRef.current.srcObject = null;
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => {
+        try {
+          track.stop();
+          track.enabled = false;
+        } catch (e) {
+          console.warn('Track stop error:', e);
+        }
+      });
+      streamRef.current = null;
+    }
+
+    if (videoRef.current) {
+      if (videoRef.current.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream;
+        stream.getTracks().forEach(track => {
+          try {
+            track.stop();
+            track.enabled = false;
+          } catch (e) {}
+        });
+        videoRef.current.srcObject = null;
+      }
+      try {
+        videoRef.current.pause();
+      } catch (e) {}
     }
     setIsStreaming(false);
   }, []);
@@ -47,10 +71,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
   const startCamera = useCallback(async () => {
     try {
       setCameraError(null);
-      if (videoRef.current && videoRef.current.srcObject) {
-        const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
-        tracks.forEach(track => track.stop());
-      }
+      stopCamera();
 
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -60,6 +81,8 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
         },
         audio: false,
       });
+
+      streamRef.current = stream;
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -76,14 +99,27 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
       setCameraError('Kamera tidak terdeteksi atau izin belum diberikan di peramban.');
       setIsStreaming(false);
     }
-  }, [facingMode]);
+  }, [facingMode, stopCamera]);
 
   useEffect(() => {
     startCamera();
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        stopCamera();
+      } else {
+        startCamera();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       stopCamera();
     };
   }, [startCamera, stopCamera]);
+
 
   // Render HUD Overlay Canvas
   const drawHud = useCallback(

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Camera, CheckCircle2, ArrowRight, ArrowLeft, Upload, RefreshCw, Sparkles, User, ShieldAlert } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -33,26 +33,50 @@ export const RegisterStudentPage: React.FC<RegisterStudentPageProps> = ({ onSucc
   // Webcam references
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
 
-  useEffect(() => {
-    if (step === 2) {
-      startCamera();
-    } else {
-      stopCamera();
+  const stopCamera = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => {
+        try {
+          track.stop();
+          track.enabled = false;
+        } catch (e) {}
+      });
+      streamRef.current = null;
     }
-    return () => {
-      stopCamera();
-    };
-  }, [step]);
 
-  const startCamera = async () => {
+    if (videoRef.current) {
+      if (videoRef.current.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream;
+        stream.getTracks().forEach(track => {
+          try {
+            track.stop();
+            track.enabled = false;
+          } catch (e) {}
+        });
+        videoRef.current.srcObject = null;
+      }
+      try {
+        videoRef.current.pause();
+      } catch (e) {}
+    }
+    setIsCameraActive(false);
+  }, []);
+
+  const startCamera = useCallback(async () => {
     try {
       setErrorMsg(null);
+      stopCamera();
+
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
         audio: false,
       });
+
+      streamRef.current = stream;
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         try {
@@ -67,16 +91,19 @@ export const RegisterStudentPage: React.FC<RegisterStudentPageProps> = ({ onSucc
       setIsCameraActive(false);
       setErrorMsg('Kamera tidak dapat diakses. Pastikan izin kamera telah diberikan atau gunakan tombol Upload File.');
     }
-  };
+  }, [stopCamera]);
 
-  const stopCamera = () => {
-    if (videoRef.current && videoRef.current.srcObject) {
-      const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
-      tracks.forEach(t => t.stop());
-      videoRef.current.srcObject = null;
+  useEffect(() => {
+    if (step === 2) {
+      startCamera();
+    } else {
+      stopCamera();
     }
-    setIsCameraActive(false);
-  };
+    return () => {
+      stopCamera();
+    };
+  }, [step, startCamera, stopCamera]);
+
 
 
   const handleCaptureCurrentPose = () => {
