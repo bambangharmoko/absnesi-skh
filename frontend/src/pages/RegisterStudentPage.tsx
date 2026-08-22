@@ -17,10 +17,13 @@ import {
   RotateCcw,
   Eye,
   Sliders,
+  Activity,
+  Layers,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { faceApi, DetailedFaceResult, HeadPose } from '../services/faceApi';
 import { audioFeedback } from '../components/kiosk/AudioFeedback';
+import { Face3DScannerCanvas } from '../components/kiosk/Face3DScannerCanvas';
 import confetti from 'canvas-confetti';
 
 interface RegisterStudentPageProps {
@@ -226,10 +229,10 @@ export const RegisterStudentPage: React.FC<RegisterStudentPageProps> = ({ onSucc
             const ctx = hudCanvas.getContext('2d');
             if (ctx) {
               ctx.clearRect(0, 0, hudCanvas.width, hudCanvas.height);
-              ctx.fillStyle = 'rgba(16, 185, 129, 0.7)'; // Emerald green points
+              ctx.fillStyle = 'rgba(52, 211, 153, 0.85)'; // Emerald green points
               landmarks.positions.forEach(p => {
                 ctx.beginPath();
-                ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+                ctx.arc(p.x, p.y, 2.2, 0, Math.PI * 2);
                 ctx.fill();
               });
             }
@@ -285,11 +288,11 @@ export const RegisterStudentPage: React.FC<RegisterStudentPageProps> = ({ onSucc
               } else {
                 // All 4 3D poses captured!
                 setIsScanningActive(false);
-                confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
+                confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
                 audioFeedback.speakText(
                   `Hebat sekali! Pemindaian wajah telah selesai. Data wajah ${formData.nickname || 'siswa'} siap didaftarkan.`
                 );
-                // Auto proceed to review after 1 second
+                // Auto proceed to review after 1.2s
                 setTimeout(() => setStep(3), 1200);
               }
             }
@@ -300,7 +303,7 @@ export const RegisterStudentPage: React.FC<RegisterStudentPageProps> = ({ onSucc
       } finally {
         isProcessingFrame = false;
       }
-    }, 150);
+    }, 140);
 
     return () => clearInterval(interval);
   }, [step, isScanningActive, isCameraActive, currentPromptIndex, capturedSamples, formData.nickname]);
@@ -403,19 +406,27 @@ export const RegisterStudentPage: React.FC<RegisterStudentPageProps> = ({ onSucc
 
   const currentTarget = POSE_TARGETS[currentPromptIndex];
 
+  const completedAnglesMap: Record<string, boolean> = {
+    CENTER: Boolean(capturedSamples['CENTER']),
+    RIGHT: Boolean(capturedSamples['RIGHT']),
+    LEFT: Boolean(capturedSamples['LEFT']),
+    UP: Boolean(capturedSamples['UP']),
+  };
+
   return (
-    <div className="flex flex-col flex-1 max-w-4xl mx-auto w-full p-4 sm:p-6 lg:p-8 space-y-6">
+    <div className="flex flex-col flex-1 max-w-5xl mx-auto w-full p-4 sm:p-6 lg:p-8 space-y-6">
       {/* Top Header */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight flex items-center gap-2">
             <span>Pendaftaran Siswa & Face ID</span>
-            <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-xs font-bold">
-              3D AI Enrollment
+            <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-xs font-bold flex items-center gap-1">
+              <Sparkles className="w-3 h-3" />
+              Three.js 3D Hologram
             </span>
           </h2>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Daftarkan profil siswa dengan pemindaian biometrik 4 sudut (Depan, Kanan, Kiri, Atas)
+            Perekaman biometrik 3D interaktif 4 sudut (Depan, Kanan, Kiri, Atas) dengan visual hologram real-time
           </p>
         </div>
 
@@ -455,7 +466,7 @@ export const RegisterStudentPage: React.FC<RegisterStudentPageProps> = ({ onSucc
           </div>
           <div>
             <div className="text-xs font-bold text-white">Langkah 2</div>
-            <div className="text-[11px] text-slate-400">Pemindaian Face ID 3D</div>
+            <div className="text-[11px] text-slate-400">Pemindaian 3D Face ID</div>
           </div>
         </div>
 
@@ -585,7 +596,7 @@ export const RegisterStudentPage: React.FC<RegisterStudentPageProps> = ({ onSucc
       )}
 
       {/* ========================================================================= */}
-      {/* STEP 2: APPLE FACE ID / 3D HEAD ROTATION GUIDED SCANNER (4 ANGLES) */}
+      {/* STEP 2: HIGH-END 3D HOLOGRAPHIC WEBGL SCANNER (4 ANGLES) */}
       {/* ========================================================================= */}
       {step === 2 && (
         <div className="p-6 rounded-3xl glass-panel border border-slate-800 space-y-6 animate-fadeIn">
@@ -594,10 +605,10 @@ export const RegisterStudentPage: React.FC<RegisterStudentPageProps> = ({ onSucc
             <div>
               <h3 className="text-lg font-black text-white flex items-center gap-2">
                 <Scan className="w-5 h-5 text-emerald-400" />
-                <span>Pemindaian Wajah 3D (4 Sudut: Depan, Kanan, Kiri, Atas)</span>
+                <span>Pemindaian Wajah 3D Hologram (Depan, Kanan, Kiri, Atas)</span>
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
-                Cukup klik <b>Mulai Pemindaian</b> lalu minta siswa menoleh sesuai panduan lingkaran
+                Perekaman mesh 3D real-time dengan rotasi kepala visual dan sensor sudut
               </p>
             </div>
 
@@ -616,132 +627,144 @@ export const RegisterStudentPage: React.FC<RegisterStudentPageProps> = ({ onSucc
           {/* 3D FACE ID MODE */}
           {/* ======================= */}
           {isFaceIdMode ? (
-            <div className="flex flex-col items-center justify-center space-y-6">
-              {/* Circular Holographic Face ID HUD Container */}
-              <div className="relative w-72 h-72 sm:w-80 sm:h-80 flex items-center justify-center">
-                {/* Outer Rotating Glowing Radar Ring */}
-                <div
-                  className={`absolute inset-0 rounded-full border-4 transition-all duration-500 ${
-                    isScanningActive
-                      ? 'border-emerald-500/80 shadow-[0_0_40px_rgba(16,185,129,0.4)] animate-pulse'
-                      : 'border-slate-700'
-                  }`}
-                />
-
-                {/* Segmented 4-Angle Indicator Ring (Depan, Kanan, Kiri, Atas) */}
-                <div className="absolute inset-[-12px] pointer-events-none">
-                  {POSE_TARGETS.map((t, idx) => {
-                    const isDone = Boolean(capturedSamples[t.id]);
-                    const isCurrent = isScanningActive && currentPromptIndex === idx;
-                    return (
-                      <div
-                        key={t.id}
-                        style={{
-                          transform: `rotate(${t.deg}deg) translate(150px) rotate(-${t.deg}deg)`,
-                        }}
-                        className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold transition-all duration-300 shadow-lg ${
-                          isDone
-                            ? 'bg-emerald-500 text-slate-950 border-2 border-white scale-110 shadow-emerald-500/50'
-                            : isCurrent
-                            ? 'bg-amber-500 text-slate-950 border-2 border-amber-300 animate-bounce scale-125'
-                            : 'bg-slate-900 text-slate-400 border border-slate-700'
-                        }`}
-                        title={t.label}
-                      >
-                        {isDone ? <Check className="w-4 h-4 stroke-[3]" /> : t.icon}
-                      </div>
-                    );
-                  })}
+            <div className="flex flex-col lg:flex-row items-center justify-center gap-8 py-2">
+              {/* Left Side: Dual-Layer 3D Holographic Viewport */}
+              <div className="relative w-72 h-72 sm:w-84 sm:h-84 flex items-center justify-center">
+                {/* Layer 1: Three.js 3D Holographic WebGL Canvas with Rotating Head & Radial Ticks */}
+                <div className="absolute inset-0 z-10 pointer-events-none">
+                  <Face3DScannerCanvas
+                    headPose={liveHeadPose}
+                    scanProgress={scanProgress}
+                    completedAngles={completedAnglesMap}
+                    isScanningActive={isScanningActive}
+                    currentAngleId={currentTarget?.id}
+                  />
                 </div>
 
-                {/* Circular Camera Viewfinder */}
-                <div className="relative w-64 h-64 sm:w-72 sm:h-72 rounded-full overflow-hidden border-4 border-slate-800 bg-slate-950 shadow-inner flex items-center justify-center">
+                {/* Layer 2: Circular Live Camera Viewport with Subtle Dark Backing */}
+                <div className="relative w-56 h-56 sm:w-64 sm:h-64 rounded-full overflow-hidden border-2 border-emerald-500/40 bg-slate-950/80 shadow-2xl flex items-center justify-center">
                   <video
                     ref={videoRef}
                     autoPlay
                     playsInline
                     muted
-                    className="absolute inset-0 w-full h-full object-cover transform scale-x-[-1]"
+                    className="absolute inset-0 w-full h-full object-cover transform scale-x-[-1] opacity-75"
                   />
 
-                  {/* Landmarks HUD Overlay Canvas */}
+                  {/* 68 Landmarks HUD Canvas */}
                   <canvas
                     ref={hudCanvasRef}
-                    className="absolute inset-0 w-full h-full object-cover transform scale-x-[-1] pointer-events-none"
+                    className="absolute inset-0 w-full h-full object-cover transform scale-x-[-1] pointer-events-none z-20"
                   />
 
-                  {/* Scanning Laser Wave */}
+                  {/* Dynamic Glowing Sci-Fi Grid Line */}
                   {isScanningActive && (
-                    <div className="absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_15px_#10b981] animate-bounce" />
+                    <div className="absolute inset-x-0 h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_20px_#06b6d4] animate-bounce z-20" />
                   )}
 
-                  {/* Center Guidance Circle */}
+                  {/* Center Guidance Reticle */}
                   <div
-                    className={`w-36 h-36 rounded-full border-2 border-dashed pointer-events-none transition-all duration-300 ${
-                      isScanningActive ? 'border-emerald-400/80 scale-105' : 'border-slate-600/60'
+                    className={`w-32 h-32 rounded-full border border-dashed pointer-events-none transition-all duration-300 z-20 ${
+                      isScanningActive ? 'border-emerald-400/80 scale-105' : 'border-slate-600/50'
                     }`}
                   />
 
-                  {/* Overlay Prompt Message Inside Camera */}
+                  {/* Prompt Text Overlay Inside Viewport */}
                   {isScanningActive && currentTarget && (
-                    <div className="absolute bottom-4 inset-x-4 px-3 py-1.5 rounded-full bg-slate-950/85 backdrop-blur-md border border-emerald-500/50 text-center pointer-events-none animate-fadeIn">
-                      <span className="text-xs font-black text-emerald-300">
-                        {currentTarget.icon} {currentTarget.instruction}
+                    <div className="absolute bottom-3 inset-x-3 px-2.5 py-1 rounded-full bg-slate-950/90 backdrop-blur-md border border-emerald-500/50 text-center pointer-events-none z-30 animate-fadeIn">
+                      <span className="text-[11px] font-black text-emerald-300">
+                        {currentTarget.icon} {currentTarget.label}
                       </span>
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Real-time Angle & Pose Meter */}
-              {liveHeadPose && isScanningActive && (
-                <div className="flex items-center gap-4 px-4 py-2 rounded-2xl bg-slate-900 border border-slate-800 text-xs font-semibold text-slate-300">
-                  <span className="flex items-center gap-1">
-                    <Compass className="w-3.5 h-3.5 text-emerald-400" />
-                    Yaw: {Math.round(liveHeadPose.yaw)}°
-                  </span>
-                  <span>•</span>
-                  <span>Pitch: {Math.round(liveHeadPose.pitch)}°</span>
-                  <span>•</span>
-                  <span className="text-emerald-400 font-bold uppercase">{liveHeadPose.poseCategory}</span>
-                </div>
-              )}
+              {/* Right Side: 3D Telemetry, Angle Cards & Progress Panel */}
+              <div className="flex-1 max-w-md w-full space-y-4">
+                {/* 4 Interactive Target Angle Cards */}
+                <div className="grid grid-cols-2 gap-2.5">
+                  {POSE_TARGETS.map((t, idx) => {
+                    const isDone = Boolean(capturedSamples[t.id]);
+                    const isCurrent = isScanningActive && currentPromptIndex === idx;
+                    return (
+                      <div
+                        key={t.id}
+                        className={`p-3 rounded-2xl border transition-all duration-300 flex items-center justify-between ${
+                          isDone
+                            ? 'bg-emerald-950/40 border-emerald-500/60 text-emerald-300 shadow-md shadow-emerald-950/50'
+                            : isCurrent
+                            ? 'bg-amber-950/40 border-amber-400 text-amber-200 animate-pulse scale-[1.02]'
+                            : 'bg-slate-900/80 border-slate-800 text-slate-400'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-lg">{t.icon}</span>
+                          <div>
+                            <div className="text-xs font-bold text-white">{t.label}</div>
+                            <div className="text-[10px] text-slate-400">{isDone ? 'Terekam ✓' : 'Menunggu'}</div>
+                          </div>
+                        </div>
 
-              {/* Progress & Live Instruction Bar */}
-              <div className="w-full max-w-md text-center space-y-3">
-                <div className="flex items-center justify-between text-xs font-bold">
-                  <span className="text-slate-400">Kemajuan Pemindaian 3D:</span>
-                  <span className="text-emerald-400">{scanProgress}% Selesai ({Object.keys(capturedSamples).length}/4 Sudut)</span>
+                        <div
+                          className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                            isDone ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-500'
+                          }`}
+                        >
+                          {isDone ? <Check className="w-3.5 h-3.5 stroke-[3]" /> : idx + 1}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
 
-                {/* Progress Bar */}
-                <div className="w-full h-3 rounded-full bg-slate-900 border border-slate-800 overflow-hidden p-0.5">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-500 shadow-md shadow-emerald-500/50"
-                    style={{ width: `${scanProgress}%` }}
-                  />
-                </div>
+                {/* Real-time Angle Telemetry Sensor */}
+                {liveHeadPose && isScanningActive && (
+                  <div className="flex items-center justify-between px-4 py-2.5 rounded-2xl bg-slate-900/90 border border-slate-800 text-xs font-semibold text-slate-300">
+                    <span className="flex items-center gap-1.5 text-cyan-300 font-mono">
+                      <Compass className="w-3.5 h-3.5 text-cyan-400" />
+                      Yaw: {Math.round(liveHeadPose.yaw)}°
+                    </span>
+                    <span className="text-slate-600">|</span>
+                    <span className="font-mono text-emerald-300">Pitch: {Math.round(liveHeadPose.pitch)}°</span>
+                    <span className="text-slate-600">|</span>
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold uppercase text-[10px] border border-emerald-500/30">
+                      {liveHeadPose.poseCategory}
+                    </span>
+                  </div>
+                )}
 
-                <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800">
-                  <div className="text-xs text-slate-400">Instruksi Saat Ini:</div>
-                  <div className="text-sm font-bold text-white mt-1">
+                {/* Progress Bar & Instructions */}
+                <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-2.5">
+                  <div className="flex items-center justify-between text-xs font-bold">
+                    <span className="text-slate-400">Progres Pemindaian 3D:</span>
+                    <span className="text-emerald-400">
+                      {scanProgress}% ({Object.keys(capturedSamples).length}/4 Sudut)
+                    </span>
+                  </div>
+
+                  <div className="w-full h-3 rounded-full bg-slate-950 border border-slate-800 overflow-hidden p-0.5">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-cyan-500 via-emerald-500 to-teal-400 transition-all duration-500 shadow-lg shadow-emerald-500/50"
+                      style={{ width: `${scanProgress}%` }}
+                    />
+                  </div>
+
+                  <div className="text-xs font-bold text-white pt-1">
                     {isScanningActive && currentTarget
                       ? currentTarget.instruction
                       : scanProgress === 100
                       ? '✅ Keempat sudut wajah 3D berhasil direkam!'
-                      : 'Klik tombol Mulai Pemindaian di bawah untuk memulai perekaman 3D'}
-                  </div>
-                  <div className="text-[11px] text-emerald-400 font-medium mt-0.5">
-                    {isScanningActive && currentTarget ? currentTarget.tip : 'Siswa cukup menatap kamera dan menoleh perlahan'}
+                      : 'Klik tombol Mulai Pemindaian di bawah untuk memulai perekaman'}
                   </div>
                 </div>
 
                 {/* Action Controls */}
-                <div className="flex items-center justify-center gap-3 pt-2">
+                <div className="flex items-center gap-3 pt-1">
                   {!isScanningActive ? (
                     <button
                       onClick={handleStart3dScan}
-                      className="px-8 py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-black text-sm sm:text-base flex items-center gap-2.5 shadow-xl shadow-emerald-600/40 transition transform active:scale-95"
+                      className="flex-1 py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-500 to-cyan-500 hover:from-emerald-500 hover:to-cyan-400 text-white font-black text-sm sm:text-base flex items-center justify-center gap-2.5 shadow-xl shadow-emerald-600/40 transition transform active:scale-95"
                     >
                       <Play className="w-5 h-5 fill-current" />
                       <span>{scanProgress > 0 ? 'Ulangi Pemindaian 3D' : 'Mulai Pemindaian Wajah 3D'}</span>
@@ -749,7 +772,7 @@ export const RegisterStudentPage: React.FC<RegisterStudentPageProps> = ({ onSucc
                   ) : (
                     <button
                       onClick={handleResetScan}
-                      className="px-5 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs flex items-center gap-2 transition"
+                      className="flex-1 py-3.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs flex items-center justify-center gap-2 transition"
                     >
                       <RotateCcw className="w-4 h-4" />
                       <span>Hentikan / Ulangi</span>
