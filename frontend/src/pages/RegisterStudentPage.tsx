@@ -48,18 +48,24 @@ export const RegisterStudentPage: React.FC<RegisterStudentPageProps> = ({ onSucc
 
   const startCamera = async () => {
     try {
+      setErrorMsg(null);
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
         audio: false,
       });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play();
+        try {
+          await videoRef.current.play();
+        } catch (playErr) {
+          console.log('Video play:', playErr);
+        }
         setIsCameraActive(true);
       }
     } catch (err) {
       console.warn('Camera error in registration:', err);
       setIsCameraActive(false);
+      setErrorMsg('Kamera tidak dapat diakses. Pastikan izin kamera telah diberikan atau gunakan tombol Upload File.');
     }
   };
 
@@ -71,6 +77,7 @@ export const RegisterStudentPage: React.FC<RegisterStudentPageProps> = ({ onSucc
     }
     setIsCameraActive(false);
   };
+
 
   const handleCaptureCurrentPose = () => {
     const video = videoRef.current;

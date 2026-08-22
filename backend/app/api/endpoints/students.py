@@ -83,15 +83,22 @@ async def enroll_student_face(
 ):
     """
     Enroll a new student or update face profile with 1 to 5 face photos.
-    Processes each photo, extracts deep 128-d SFace embedding, computes centroid, and stores in SQLite.
+    Extracts deep 128-d SFace embeddings and stores them in Supabase / SQLite database.
     """
+    nis_clean = nis.strip()
+    full_name_clean = full_name.strip()
+    nickname_clean = nickname.strip()
+
+    if not nis_clean or not full_name_clean or not nickname_clean:
+        raise HTTPException(status_code=422, detail="NIS, Nama Lengkap, dan Nama Panggilan wajib diisi.")
+
     # 1. Find or create student
-    student = db.query(Student).filter(Student.nis == nis).first()
+    student = db.query(Student).filter(Student.nis == nis_clean).first()
     if not student:
         student = Student(
-            nis=nis,
-            full_name=full_name,
-            nickname=nickname,
+            nis=nis_clean,
+            full_name=full_name_clean,
+            nickname=nickname_clean,
             class_name=class_name,
             category=category,
             is_active=True
@@ -101,8 +108,8 @@ async def enroll_student_face(
         db.refresh(student)
     else:
         # Update details
-        student.full_name = full_name
-        student.nickname = nickname
+        student.full_name = full_name_clean
+        student.nickname = nickname_clean
         student.class_name = class_name
         student.category = category
         db.commit()
@@ -114,6 +121,9 @@ async def enroll_student_face(
     for idx, photo_file in enumerate(photos):
         try:
             contents = await photo_file.read()
+            if not contents:
+                continue
+
             nparr = np.frombuffer(contents, np.uint8)
             img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
@@ -125,8 +135,8 @@ async def enroll_student_face(
             if aligned_face is None:
                 h, w = img_bgr.shape[:2]
                 min_dim = min(h, w)
-                crop_y = (h - min_dim) // 2
-                crop_x = (w - min_dim) // 2
+                crop_y = max(0, (h - min_dim) // 2)
+                crop_x = max(0, (w - min_dim) // 2)
                 aligned_face = cv2.resize(img_bgr[crop_y:crop_y+min_dim, crop_x:crop_x+min_dim], (160, 160))
 
             # Extract 128-d Deep SFace embedding
@@ -136,13 +146,17 @@ async def enroll_student_face(
             )
             extracted_vectors.append(emb_vec)
 
-            # Save photo to disk
+            # Try to save photo file to disk (if writable)
             pose_name = poses[idx] if idx < len(poses) else f"Pose_{idx+1}"
             filename = f"student_{student.id}_{idx}_{uuid.uuid4().hex[:6]}.jpg"
-            photo_path = settings.STUDENT_PHOTOS_DIR / filename
-            cv2.imwrite(str(photo_path), aligned_face)
+            try:
+                os.makedirs(settings.STUDENT_PHOTOS_DIR, exist_ok=True)
+                photo_path = settings.STUDENT_PHOTOS_DIR / filename
+                cv2.imwrite(str(photo_path), aligned_face)
+            except Exception as write_err:
+                print(f"Notice saving student photo: {write_err}")
 
-            # Save embedding record
+            # Save embedding record to database
             face_emb = FaceEmbedding(
                 student_id=student.id,
                 embedding_vector=json.dumps(emb_vec.tolist()),
@@ -157,7 +171,7 @@ async def enroll_student_face(
             continue
 
     if not extracted_vectors:
-        raise HTTPException(status_code=400, detail="Tidak ada wajah yang berhasil diproses dari foto yang diunggah.")
+        raise HTTPException(status_code=400, detail="Tidak ada wajah yang berhasil diproses dari foto yang dikirimkan. Pastikan foto memuat wajah yang jelas.")
 
     # Compute and store centroid embedding for robust multi-angle matching
     if len(extracted_vectors) > 1:
