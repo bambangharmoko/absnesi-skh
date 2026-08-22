@@ -110,7 +110,7 @@ export const api = {
       }
 
       // Record Attendance in Database
-      const attResult = db.recordAttendance(
+      const attResult = await db.recordAttendance(
         {
           id: match.student.id,
           nis: match.student.nis,
@@ -192,7 +192,6 @@ export const api = {
     }
 
     if (processedPhotos.length === 0) {
-      // Fallback: create random mock descriptor if camera lighting is low
       processedPhotos.push({
         pose_label: 'Sampel 1',
         photo_data: '',
@@ -200,7 +199,7 @@ export const api = {
       });
     }
 
-    const student = db.saveStudent({
+    const student = await db.saveStudent({
       nis,
       full_name: fullName,
       nickname,
@@ -217,7 +216,7 @@ export const api = {
   },
 
   async deleteStudent(studentId: string): Promise<{ status: string; message: string }> {
-    db.deleteStudent(studentId);
+    await db.deleteStudent(studentId);
     return {
       status: 'SUCCESS',
       message: 'Siswa berhasil dihapus dari sistem.',
@@ -247,7 +246,7 @@ export const api = {
     const student = db.getStudentById(data.student_id);
     if (!student) throw new Error('Siswa tidak ditemukan');
 
-    const result = db.recordAttendance(
+    const result = await db.recordAttendance(
       {
         id: student.id,
         nis: student.nis,
@@ -261,6 +260,7 @@ export const api = {
     );
     return result.record;
   },
+
 
   // Export Excel directly in TypeScript
   getExportExcelUrl(month?: number, year?: number, className?: string): string {

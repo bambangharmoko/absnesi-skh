@@ -1,4 +1,4 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { supabase } from './supabase';
 import * as XLSX from 'xlsx';
 
 export interface StudentRecord {
@@ -15,8 +15,8 @@ export interface StudentRecord {
   embeddings: Array<{
     id: string;
     pose_label: string;
-    photo_data: string; // Base64 data URL
-    vector: number[]; // 128-d float array
+    photo_data: string;
+    vector: number[];
   }>;
 }
 
@@ -28,8 +28,8 @@ export interface AttendanceRecord {
   student_nis: string;
   class_name: string;
   category: string;
-  date: string; // YYYY-MM-DD
-  time_in: string; // HH:MM:SS
+  date: string;
+  time_in: string;
   status: 'HADIR' | 'TERLAMBAT' | 'IZIN' | 'SAKIT' | 'ALPHA';
   confidence_score: number;
   verification_method: string;
@@ -38,7 +38,6 @@ export interface AttendanceRecord {
   created_at: string;
 }
 
-// Initial Demo Seed Data
 const INITIAL_STUDENTS: StudentRecord[] = [
   {
     id: '5d9baac8-87c7-485e-95ba-35f1f0a14f49',
@@ -82,13 +81,12 @@ const INITIAL_STUDENTS: StudentRecord[] = [
 ];
 
 class DatabaseService {
-  private studentsKey = 'skh_students_v1';
-  private attendancesKey = 'skh_attendances_v1';
-  private supabase: SupabaseClient | null = null;
+  private studentsKey = 'skh_students_v2';
+  private attendancesKey = 'skh_attendances_v2';
 
   constructor() {
     this.initDatabase();
-    this.initSupabase();
+    this.syncFromSupabase();
   }
 
   private initDatabase() {
@@ -98,16 +96,46 @@ class DatabaseService {
     }
   }
 
-  private initSupabase() {
-    const supabaseUrl = 'https://lygoswawqplklqvnouao.supabase.co';
-    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-    if (supabaseUrl && supabaseKey) {
-      try {
-        this.supabase = createClient(supabaseUrl, supabaseKey);
-        console.log('[Database] Supabase Client initialized.');
-      } catch (e) {
-        console.warn('[Database] Supabase init notice:', e);
+  /**
+   * Automatically fetch live students & embeddings from Supabase Cloud
+   */
+  async syncFromSupabase() {
+    if (!supabase) return;
+    try {
+      const { data: studentsData, error: sErr } = await supabase
+        .from('students')
+        .select('*, face_embeddings(*)');
+
+      if (!sErr && studentsData && studentsData.length > 0) {
+        const mapped: StudentRecord[] = studentsData.map(s => ({
+          id: s.id,
+          nis: s.nis,
+          full_name: s.full_name,
+          nickname: s.nickname,
+          class_name: s.class_name,
+          category: s.category,
+          is_active: s.is_active,
+          created_at: s.created_at,
+          photo_count: s.face_embeddings ? s.face_embeddings.length : 0,
+          latest_photo: s.face_embeddings && s.face_embeddings.length > 0 ? s.face_embeddings[0].photo_path : null,
+          embeddings: (s.face_embeddings || []).map((e: { id: string; pose_label: string; photo_path: string; embedding_vector: string }) => {
+            let vec: number[] = [];
+            try {
+              vec = JSON.parse(e.embedding_vector);
+            } catch {}
+            return {
+              id: e.id,
+              pose_label: e.pose_label,
+              photo_data: e.photo_path || '',
+              vector: vec,
+            };
+          }),
+        }));
+        localStorage.setItem(this.studentsKey, JSON.stringify(mapped));
+        console.log(`[Database] Synced ${mapped.length} students from Supabase.`);
       }
+    } catch (e) {
+      console.warn('[Database] Sync notice:', e);
     }
   }
 
@@ -145,14 +173,14 @@ class DatabaseService {
     return list.find(s => s.id === id) || null;
   }
 
-  saveStudent(studentData: {
+  async saveStudent(studentData: {
     nis: string;
     full_name: string;
     nickname: string;
     class_name: string;
     category: string;
     photos: Array<{ pose_label: string; photo_data: string; descriptor: Float32Array }>;
-  }): StudentRecord {
+  }): Promise<StudentRecord> {
     const raw = localStorage.getItem(this.studentsKey);
     let list: StudentRecord[] = raw ? JSON.parse(raw) : [];
 
@@ -187,14 +215,50 @@ class DatabaseService {
     }
 
     localStorage.setItem(this.studentsKey, JSON.stringify(list));
+
+    // Async sync to Supabase Cloud if available
+    if (supabase) {
+      try {
+        await supabase.from('students').upsert({
+          id: newStudent.id,
+          nis: newStudent.nis,
+          full_name: newStudent.full_name,
+          nickname: newStudent.nickname,
+          class_name: newStudent.class_name,
+          category: newStudent.category,
+          is_active: true,
+        });
+
+        if (embeddings.length > 0) {
+          const embPayload = embeddings.map(e => ({
+            id: e.id,
+            student_id: newStudent.id,
+            embedding_vector: JSON.stringify(e.vector),
+            pose_label: e.pose_label,
+          }));
+          await supabase.from('face_embeddings').insert(embPayload);
+        }
+      } catch (err) {
+        console.warn('[Database] Supabase push notice:', err);
+      }
+    }
+
     return newStudent;
   }
 
-  deleteStudent(id: string): boolean {
+  async deleteStudent(id: string): Promise<boolean> {
     const raw = localStorage.getItem(this.studentsKey);
     let list: StudentRecord[] = raw ? JSON.parse(raw) : [];
     list = list.filter(s => s.id !== id);
     localStorage.setItem(this.studentsKey, JSON.stringify(list));
+
+    if (supabase) {
+      try {
+        await supabase.from('students').delete().eq('id', id);
+      } catch (e) {
+        console.warn('[Database] Supabase delete notice:', e);
+      }
+    }
     return true;
   }
 
@@ -221,7 +285,7 @@ class DatabaseService {
     return list.sort((a, b) => b.created_at.localeCompare(a.created_at));
   }
 
-  recordAttendance(
+  async recordAttendance(
     student: {
       id: string;
       nis: string;
@@ -232,10 +296,10 @@ class DatabaseService {
     },
     confidence: number,
     capturedPhoto?: string | null
-  ): { status: 'RECORDED_SUCCESS' | 'ALREADY_RECORDED'; message: string; record: AttendanceRecord } {
+  ): Promise<{ status: 'RECORDED_SUCCESS' | 'ALREADY_RECORDED'; message: string; record: AttendanceRecord }> {
     const now = new Date();
     const todayStr = now.toISOString().split('T')[0];
-    const timeStr = now.toTimeString().split(' ')[0]; // HH:MM:SS
+    const timeStr = now.toTimeString().split(' ')[0];
 
     const allAttendances = this.getAttendances();
     const existing = allAttendances.find(a => a.student_id === student.id && a.date === todayStr);
@@ -248,7 +312,6 @@ class DatabaseService {
       };
     }
 
-    // Determine status (Hadir vs Terlambat: threshold 07:30)
     const hours = now.getHours();
     const minutes = now.getMinutes();
     const isLate = hours > 7 || (hours === 7 && minutes > 30);
@@ -274,6 +337,24 @@ class DatabaseService {
 
     allAttendances.unshift(newRecord);
     localStorage.setItem(this.attendancesKey, JSON.stringify(allAttendances));
+
+    // Sync to Supabase
+    if (supabase) {
+      try {
+        await supabase.from('attendances').insert({
+          id: newRecord.id,
+          student_id: newRecord.student_id,
+          date: newRecord.date,
+          time_in: newRecord.time_in,
+          status: newRecord.status,
+          confidence_score: newRecord.confidence_score,
+          verification_method: newRecord.verification_method,
+          notes: newRecord.notes,
+        });
+      } catch (err) {
+        console.warn('[Database] Supabase attendance push notice:', err);
+      }
+    }
 
     return {
       status: 'RECORDED_SUCCESS',
@@ -302,10 +383,6 @@ class DatabaseService {
       date: todayStr,
     };
   }
-
-  // ==========================================
-  // EXCEL EXPORT
-  // ==========================================
 
   exportExcel(date?: string, className?: string): void {
     const list = this.getAttendances(date, className);
