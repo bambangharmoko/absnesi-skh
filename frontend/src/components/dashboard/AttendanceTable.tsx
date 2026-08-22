@@ -119,7 +119,8 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
             <tr className="border-b border-slate-800 text-xs font-bold text-slate-400 uppercase tracking-wider">
               <th className="py-3 px-4">Siswa</th>
               <th className="py-3 px-4">Kelas & Spesifikasi</th>
-              <th className="py-3 px-4">Waktu Masuk</th>
+              <th className="py-3 px-4">Jam Masuk</th>
+              <th className="py-3 px-4">Jam Pulang</th>
               <th className="py-3 px-4">Status</th>
               <th className="py-3 px-4">Metode Presensi</th>
               <th className="py-3 px-4 text-right">Aksi</th>
@@ -128,7 +129,7 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
           <tbody className="divide-y divide-slate-800/60 text-sm">
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={6} className="py-8 text-center text-slate-400">
+                <td colSpan={7} className="py-8 text-center text-slate-400">
                   Tidak ada data siswa yang cocok dengan filter.
                 </td>
               </tr>
@@ -154,10 +155,19 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
                     <div className="text-xs text-slate-400">{student.category}</div>
                   </td>
 
-                  {/* Time */}
+                  {/* Time In */}
                   <td className="py-3.5 px-4">
-                    {attendance ? (
+                    {attendance && attendance.time_in ? (
                       <span className="font-semibold text-emerald-300">{attendance.time_in}</span>
+                    ) : (
+                      <span className="text-slate-500">-</span>
+                    )}
+                  </td>
+
+                  {/* Time Out */}
+                  <td className="py-3.5 px-4">
+                    {attendance && attendance.time_out ? (
+                      <span className="font-semibold text-amber-300">{attendance.time_out}</span>
                     ) : (
                       <span className="text-slate-500">-</span>
                     )}
@@ -165,6 +175,7 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
 
                   {/* Status */}
                   <td className="py-3.5 px-4">{renderStatusBadge(status)}</td>
+
 
                   {/* Method */}
                   <td className="py-3.5 px-4">

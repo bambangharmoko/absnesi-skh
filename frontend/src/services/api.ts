@@ -23,11 +23,13 @@ export interface AttendanceRecord {
   class_name: string;
   category: string;
   date: string;
-  time_in: string;
-  status: 'HADIR' | 'TERLAMBAT' | 'IZIN' | 'SAKIT' | 'ALPHA';
+  time_in: string | null;
+  time_out?: string | null;
+  status: 'HADIR' | 'TERLAMBAT' | 'PULANG' | 'IZIN' | 'SAKIT' | 'ALPHA';
   confidence_score: number;
   verification_method: string;
   captured_photo?: string | null;
+  captured_photo_out?: string | null;
   notes?: string | null;
   created_at: string;
 }
@@ -39,6 +41,7 @@ export interface AttendanceSummary {
   total_permission: number;
   total_sick: number;
   total_absent: number;
+  checkout_count?: number;
   attendance_rate: number;
 }
 
@@ -61,14 +64,16 @@ export interface VerifyFrameResponse {
     photo_url?: string | null;
   } | null;
   confidence: number;
-  attendance_status?: 'RECORDED_SUCCESS' | 'ALREADY_RECORDED' | 'NONE';
+  attendance_status?: 'RECORDED_SUCCESS' | 'RECORDED_CHECKOUT_SUCCESS' | 'ALREADY_RECORDED' | 'NONE';
   time?: string | null;
+  time_in?: string | null;
+  time_out?: string | null;
   message: string;
   bounding_box?: BoundingBox | null;
 }
 
 export const api = {
-  // Face Recognition Verification (Pure TypeScript Client-Side Engine)
+  // Face Recognition Verification (Pure Client-Side Engine)
   async verifyFrame(imageBase64: string, classId?: string): Promise<VerifyFrameResponse> {
     try {
       const detection = await faceApi.extractDescriptorFromDataUrl(imageBase64);
@@ -109,27 +114,12 @@ export const api = {
         };
       }
 
-      // Record Attendance in Database
-      const attResult = await db.recordAttendance(
-        {
-          id: match.student.id,
-          nis: match.student.nis,
-          full_name: match.student.name,
-          nickname: match.student.nickname,
-          class_name: match.student.class_name,
-          category: match.student.category,
-        },
-        match.confidence,
-        imageBase64
-      );
-
       return {
         status: 'MATCHED',
         student: match.student,
         confidence: match.confidence,
-        attendance_status: attResult.status,
-        time: attResult.record.time_in,
-        message: attResult.message,
+        message: `Wajah Cocok: ${match.student.name} (${Math.round(match.confidence * 100)}%)`,
+        bounding_box: null,
       };
     } catch (err) {
       console.error('[API] verifyFrame error:', err);
@@ -238,11 +228,12 @@ export const api = {
       total_permission: 0,
       total_sick: 0,
       total_absent: Math.max(0, stats.total_students - stats.present_count),
+      checkout_count: stats.checkout_count,
       attendance_rate: stats.attendance_rate,
     };
   },
 
-  async manualOverride(data: { student_id: string; status: string; notes?: string; date?: string }): Promise<AttendanceRecord> {
+  async manualOverride(data: { student_id: string; status: string; notes?: string; date?: string; mode?: 'IN' | 'OUT' | 'AUTO' }): Promise<AttendanceRecord> {
     const student = db.getStudentById(data.student_id);
     if (!student) throw new Error('Siswa tidak ditemukan');
 
@@ -256,11 +247,11 @@ export const api = {
         category: student.category,
       },
       1.0,
-      null
+      null,
+      data.mode || 'AUTO'
     );
     return result.record;
   },
-
 
   // Export Excel directly in TypeScript
   getExportExcelUrl(month?: number, year?: number, className?: string): string {

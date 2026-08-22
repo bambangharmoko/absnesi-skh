@@ -80,15 +80,28 @@ export const LiveAttendanceFeed: React.FC<LiveAttendanceFeedProps> = ({ records 
                     <div className="flex items-center gap-2">
                       <h5 className="text-sm font-bold text-slate-100">{item.student_name}</h5>
                     </div>
-                    <div className="flex items-center gap-2 mt-0.5">
+                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                       <span className="text-xs text-slate-400">{item.class_name}</span>
-                      <span className="text-[10px] text-slate-500">•</span>
-                      <span className="text-[11px] text-emerald-400/90 font-medium">
-                        {item.time_in}
-                      </span>
+                      {item.time_in && (
+                        <>
+                          <span className="text-[10px] text-slate-500">•</span>
+                          <span className="text-[11px] text-emerald-400 font-medium">
+                            Masuk: {item.time_in}
+                          </span>
+                        </>
+                      )}
+                      {item.time_out && (
+                        <>
+                          <span className="text-[10px] text-slate-500">•</span>
+                          <span className="text-[11px] text-amber-400 font-medium">
+                            Pulang: {item.time_out}
+                          </span>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
+
 
                 <div className="flex flex-col items-end gap-1">
                   <span

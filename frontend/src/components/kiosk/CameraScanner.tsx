@@ -15,6 +15,10 @@ import {
   HelpCircle,
   ThumbsUp,
   RotateCcw,
+  Sun,
+  Home,
+  Zap,
+  LogOut,
 } from 'lucide-react';
 import { api, VerifyFrameResponse, Student } from '../../services/api';
 import { db } from '../../services/db';
@@ -58,6 +62,9 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [enrolledStudents, setEnrolledStudents] = useState<Student[]>([]);
 
+  // Attendance Mode: AUTO (Otomatis) | IN (Presensi Masuk) | OUT (Presensi Pulang)
+  const [kioskMode, setKioskMode] = useState<'AUTO' | 'IN' | 'OUT'>('AUTO');
+
   // Verification Step: Student Detected Confirmation State
   const [pendingMatch, setPendingMatch] = useState<PendingMatch | null>(null);
   const [isSubmittingAttendance, setIsSubmittingAttendance] = useState<boolean>(false);
@@ -67,6 +74,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
   const [capturedSnapshot, setCapturedSnapshot] = useState<string | null>(null);
   const [manualSearch, setManualSearch] = useState<string>('');
   const [selectedManualStudent, setSelectedManualStudent] = useState<Student | null>(null);
+  const [manualModeChoice, setManualModeChoice] = useState<'IN' | 'OUT'>('IN');
   const [isVerifyingManual, setIsVerifyingManual] = useState<boolean>(false);
   const [manualAiMessage, setManualAiMessage] = useState<string | null>(null);
 
@@ -234,6 +242,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
       ctx.lineTo(x + w, y + cornerLen);
       ctx.stroke();
 
+
       ctx.beginPath();
       ctx.moveTo(x, y + h - cornerLen);
       ctx.lineTo(x, y + h);
@@ -243,7 +252,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
       ctx.beginPath();
       ctx.moveTo(x + w - cornerLen, y + h);
       ctx.lineTo(x + w, y + h);
-      ctx.lineTo(x + w, y + cornerLen);
+      ctx.lineTo(x + w, y + h - cornerLen);
       ctx.stroke();
 
       if (name) {
@@ -318,15 +327,17 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
   }, [isPaused, isProcessing, selectedClass, drawHud, showManualModal, pendingMatch]);
 
   // ==========================================
-  // CONFIRM ATTENDANCE BUTTON HANDLER
+  // CONFIRM ATTENDANCE (MASUK / PULANG)
   // ==========================================
 
-  const handleConfirmAttendance = async () => {
+  const handleConfirmAttendance = async (actionType?: 'IN' | 'OUT') => {
     if (!pendingMatch) return;
     setIsSubmittingAttendance(true);
 
     try {
       const student = pendingMatch.student;
+      const chosenMode = actionType || (kioskMode === 'AUTO' ? 'AUTO' : kioskMode);
+
       const attResult = await db.recordAttendance(
         {
           id: student.id,
@@ -337,7 +348,8 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
           category: student.category,
         },
         pendingMatch.confidence,
-        pendingMatch.snapshot
+        pendingMatch.snapshot,
+        chosenMode
       );
 
       const responseObj: VerifyFrameResponse = {
@@ -345,7 +357,9 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
         student: pendingMatch.student,
         confidence: pendingMatch.confidence,
         attendance_status: attResult.status,
-        time: attResult.record.time_in,
+        time: attResult.record.time_in || attResult.record.time_out,
+        time_in: attResult.record.time_in,
+        time_out: attResult.record.time_out,
         message: attResult.message,
         bounding_box: null,
       };
@@ -426,7 +440,8 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
       const res = await api.manualOverride({
         student_id: selectedManualStudent.id,
         status: 'HADIR',
-        notes: 'Presensi via Foto & Konfirmasi Manual',
+        notes: `Presensi Manual (${manualModeChoice === 'IN' ? 'Masuk' : 'Pulang'})`,
+        mode: manualModeChoice,
       });
 
       const responseObj: VerifyFrameResponse = {
@@ -441,9 +456,14 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
           photo_url: selectedManualStudent.latest_photo || null,
         },
         confidence: 1.0,
-        attendance_status: 'RECORDED_SUCCESS',
-        time: res.time_in,
-        message: `Presensi manual berhasil! Selamat datang, ${selectedManualStudent.nickname}.`,
+        attendance_status: manualModeChoice === 'OUT' ? 'RECORDED_CHECKOUT_SUCCESS' : 'RECORDED_SUCCESS',
+        time: res.time_in || res.time_out,
+        time_in: res.time_in,
+        time_out: res.time_out,
+        message:
+          manualModeChoice === 'OUT'
+            ? `Presensi pulang manual berhasil! Selamat beristirahat, ${selectedManualStudent.nickname}.`
+            : `Presensi masuk manual berhasil! Selamat belajar, ${selectedManualStudent.nickname}.`,
         bounding_box: null,
       };
 
@@ -467,6 +487,13 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
     const q = manualSearch.toLowerCase();
     return s.full_name.toLowerCase().includes(q) || s.nickname.toLowerCase().includes(q) || s.nis.toLowerCase().includes(q);
   });
+
+  // Calculate today status for pending match
+  const todayRecord = pendingMatch
+    ? db.getAttendances(new Date().toISOString().split('T')[0]).find(a => a.student_id === pendingMatch.student.id)
+    : null;
+  const isAlreadyCheckedIn = Boolean(todayRecord && todayRecord.time_in);
+  const isAlreadyCheckedOut = Boolean(todayRecord && todayRecord.time_out);
 
   return (
     <div className="relative w-full h-full flex flex-col items-center justify-center overflow-hidden rounded-3xl bg-slate-950 border border-slate-800 shadow-2xl">
@@ -532,7 +559,8 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
         <canvas ref={canvasRef} className="hidden" />
 
         {/* Top Floating Status & Action Bar */}
-        <div className="absolute top-4 left-4 right-4 flex items-center justify-between pointer-events-none z-30">
+        <div className="absolute top-4 left-4 right-4 flex items-center justify-between pointer-events-none z-30 flex-wrap gap-2">
+          {/* Status Badge */}
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass-panel text-xs sm:text-sm font-semibold shadow-lg">
             {hudStatus === 'MATCHED' && <UserCheck className="w-4 h-4 text-emerald-400 animate-bounce" />}
             {hudStatus === 'UNKNOWN' && <ShieldAlert className="w-4 h-4 text-red-400" />}
@@ -550,7 +578,50 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
             </span>
           </div>
 
+          {/* Right Controls: Mode Toggle & Manual Button */}
           <div className="pointer-events-auto flex items-center gap-2">
+            {/* Mode Switcher: Auto / Masuk / Pulang */}
+            <div className="flex items-center p-1 rounded-full bg-slate-900/90 border border-slate-700 shadow-md">
+              <button
+                onClick={() => setKioskMode('AUTO')}
+                title="Mode Otomatis (Masuk Pagi / Pulang Siang)"
+                className={`px-2.5 py-1 rounded-full text-xs font-bold flex items-center gap-1 transition ${
+                  kioskMode === 'AUTO'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Zap className="w-3.5 h-3.5" />
+                <span>Otomatis</span>
+              </button>
+
+              <button
+                onClick={() => setKioskMode('IN')}
+                title="Mode Khusus Presensi Masuk"
+                className={`px-2.5 py-1 rounded-full text-xs font-bold flex items-center gap-1 transition ${
+                  kioskMode === 'IN'
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Sun className="w-3.5 h-3.5" />
+                <span>Masuk</span>
+              </button>
+
+              <button
+                onClick={() => setKioskMode('OUT')}
+                title="Mode Khusus Presensi Pulang"
+                className={`px-2.5 py-1 rounded-full text-xs font-bold flex items-center gap-1 transition ${
+                  kioskMode === 'OUT'
+                    ? 'bg-amber-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Home className="w-3.5 h-3.5" />
+                <span>Pulang</span>
+              </button>
+            </div>
+
             <button
               onClick={() => setFacingMode(prev => (prev === 'user' ? 'environment' : 'user'))}
               title="Ganti Kamera Depan/Belakang"
@@ -561,16 +632,16 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
 
             <button
               onClick={handleOpenManualAttendance}
-              className="px-4 py-2 rounded-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs sm:text-sm font-bold flex items-center gap-2 shadow-lg shadow-emerald-600/30 transition transform active:scale-95"
+              className="px-3.5 py-2 rounded-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs sm:text-sm font-bold flex items-center gap-1.5 shadow-lg shadow-emerald-600/30 transition transform active:scale-95"
             >
               <Camera className="w-4 h-4" />
-              <span>Absen Manual & Foto</span>
+              <span>Absen Manual</span>
             </button>
           </div>
         </div>
 
         {/* ========================================================= */}
-        {/* INTERACTIVE VERIFICATION OVERLAY CARD: "KONFIRMASI HADIR" */}
+        {/* INTERACTIVE VERIFICATION OVERLAY CARD: "MASUK & PULANG" */}
         {/* ========================================================= */}
         {pendingMatch && (
           <div className="absolute inset-x-4 bottom-4 z-40 flex justify-center animate-slideUp">
@@ -591,11 +662,20 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                 </div>
 
                 <div className="flex-1 overflow-hidden">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[11px] font-bold border border-emerald-500/30">
                       {Math.round(pendingMatch.confidence * 100)}% Wajah Cocok
                     </span>
-                    <span className="text-xs text-slate-400">{pendingMatch.student.nis}</span>
+                    {isAlreadyCheckedIn && !isAlreadyCheckedOut && (
+                      <span className="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 text-[11px] font-semibold border border-blue-500/30">
+                        Sudah Masuk ({todayRecord?.time_in})
+                      </span>
+                    )}
+                    {isAlreadyCheckedOut && (
+                      <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 text-[11px] font-semibold border border-amber-500/30">
+                        Sudah Pulang ({todayRecord?.time_out})
+                      </span>
+                    )}
                   </div>
 
                   <h3 className="text-lg font-black text-white truncate mt-1">
@@ -607,23 +687,42 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                 </div>
               </div>
 
-              {/* Action Buttons: Hadir vs Bukan Siswa Ini */}
-              <div className="flex items-center gap-3 pt-2 border-t border-slate-800">
+              {/* Action Buttons: Hadir Masuk vs Hadir Pulang */}
+              <div className="flex items-center gap-2 pt-2 border-t border-slate-800 flex-wrap">
                 <button
                   onClick={handleCancelPendingMatch}
-                  className="flex-1 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold flex items-center justify-center gap-1.5 transition"
+                  className="px-3.5 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold flex items-center justify-center gap-1.5 transition"
                 >
                   <RotateCcw className="w-4 h-4" />
                   <span>Bukan Saya</span>
                 </button>
 
+                {/* Tombol Presensi Masuk */}
                 <button
-                  onClick={handleConfirmAttendance}
-                  disabled={isSubmittingAttendance}
-                  className="flex-[2] py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-sm sm:text-base flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/40 transition transform active:scale-95 disabled:opacity-50"
+                  onClick={() => handleConfirmAttendance('IN')}
+                  disabled={isSubmittingAttendance || isAlreadyCheckedIn}
+                  className={`flex-1 py-3 rounded-2xl font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-lg transition transform active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed ${
+                    !isAlreadyCheckedIn
+                      ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 shadow-emerald-500/30'
+                      : 'bg-slate-800 text-slate-400'
+                  }`}
                 >
-                  <ThumbsUp className="w-5 h-5 fill-current" />
-                  <span>{isSubmittingAttendance ? 'Mencatat Presensi...' : 'KLIK HADIR SEKARANG'}</span>
+                  <Sun className="w-4 h-4" />
+                  <span>{isAlreadyCheckedIn ? 'Sudah Masuk' : 'KLIK MASUK (HADIR)'}</span>
+                </button>
+
+                {/* Tombol Presensi Pulang */}
+                <button
+                  onClick={() => handleConfirmAttendance('OUT')}
+                  disabled={isSubmittingAttendance || isAlreadyCheckedOut}
+                  className={`flex-1 py-3 rounded-2xl font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-lg transition transform active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed ${
+                    isAlreadyCheckedIn && !isAlreadyCheckedOut
+                      ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-amber-500/30'
+                      : 'bg-slate-800 text-slate-400'
+                  }`}
+                >
+                  <Home className="w-4 h-4" />
+                  <span>{isAlreadyCheckedOut ? 'Sudah Pulang' : 'KLIK PULANG'}</span>
                 </button>
               </div>
             </div>
@@ -634,7 +733,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
         {!pendingMatch && (
           <div className="absolute bottom-4 left-4 right-4 pointer-events-none z-30 flex items-center justify-between">
             <div className="hidden sm:inline-block px-4 py-2 rounded-2xl glass-panel text-xs text-slate-300 shadow-xl border border-slate-700/50">
-              💡 <span className="font-semibold text-emerald-400">Tips:</span> Arahkan wajah ke kamera • Klik tombol "Hadir" saat nama Anda muncul
+              💡 Mode: <span className="font-bold text-emerald-400">{kioskMode === 'AUTO' ? 'Otomatis' : kioskMode === 'IN' ? 'Presensi Masuk' : 'Presensi Pulang'}</span> • Tatap kamera lalu klik Masuk/Pulang
             </div>
 
             <button
@@ -661,7 +760,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                   <Camera className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white">Absensi Manual & Verifikasi Foto</h3>
+                  <h3 className="text-base font-bold text-white">Absensi Manual (Masuk & Pulang)</h3>
                   <p className="text-xs text-slate-400">Foto snapshot diambil dari kamera saat tombol ditekan</p>
                 </div>
               </div>
@@ -675,9 +774,36 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
 
             {/* Modal Body */}
             <div className="p-5 overflow-y-auto space-y-5 flex-1">
+              {/* Mode Selection */}
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setManualModeChoice('IN')}
+                  className={`flex-1 p-3 rounded-2xl border text-xs font-bold flex items-center justify-center gap-2 transition ${
+                    manualModeChoice === 'IN'
+                      ? 'bg-emerald-950/70 border-emerald-500 text-emerald-300'
+                      : 'bg-slate-950/50 border-slate-800 text-slate-400'
+                  }`}
+                >
+                  <Sun className="w-4 h-4 text-emerald-400" />
+                  <span>Presensi Masuk (Pagi)</span>
+                </button>
+
+                <button
+                  onClick={() => setManualModeChoice('OUT')}
+                  className={`flex-1 p-3 rounded-2xl border text-xs font-bold flex items-center justify-center gap-2 transition ${
+                    manualModeChoice === 'OUT'
+                      ? 'bg-amber-950/70 border-amber-500 text-amber-300'
+                      : 'bg-slate-950/50 border-slate-800 text-slate-400'
+                  }`}
+                >
+                  <Home className="w-4 h-4 text-amber-400" />
+                  <span>Presensi Pulang (Siang)</span>
+                </button>
+              </div>
+
               {/* Snapshot Preview & AI Status */}
               <div className="flex flex-col sm:flex-row items-center gap-4 p-4 rounded-2xl bg-slate-950 border border-slate-800">
-                <div className="w-28 h-28 rounded-2xl overflow-hidden bg-slate-800 border border-slate-700 flex-shrink-0 flex items-center justify-center">
+                <div className="w-24 h-24 rounded-2xl overflow-hidden bg-slate-800 border border-slate-700 flex-shrink-0 flex items-center justify-center">
                   {capturedSnapshot ? (
                     <img src={capturedSnapshot} alt="Snapshot" className="w-full h-full object-cover transform scale-x-[-1]" />
                   ) : (
@@ -690,7 +816,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                     Hasil Pemindaian Snapshot:
                   </div>
                   <div className="text-sm font-semibold text-slate-200">
-                    {manualAiMessage || 'Foto berhasil diambil. Pilih nama siswa di bawah untuk konfirmasi.'}
+                    {manualAiMessage || 'Foto snapshot tersimpan. Pilih siswa untuk mencatat kehadiran.'}
                   </div>
                   {selectedManualStudent && (
                     <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-xs font-bold mt-1">
@@ -721,7 +847,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                   />
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-56 overflow-y-auto pr-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-48 overflow-y-auto pr-1">
                   {filteredStudents.map(student => {
                     const isSelected = selectedManualStudent?.id === student.id;
                     return (
@@ -758,11 +884,6 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                       </div>
                     );
                   })}
-                  {filteredStudents.length === 0 && (
-                    <div className="col-span-full py-8 text-center text-xs text-slate-500">
-                      Tidak ada siswa yang sesuai pencarian.
-                    </div>
-                  )}
                 </div>
               </div>
             </div>
@@ -786,7 +907,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                   {isVerifyingManual
                     ? 'Memproses Presensi...'
                     : selectedManualStudent
-                    ? `Konfirmasi Hadir (${selectedManualStudent.nickname})`
+                    ? `Konfirmasi ${manualModeChoice === 'IN' ? 'Masuk' : 'Pulang'} (${selectedManualStudent.nickname})`
                     : 'Pilih Siswa Terlebih Dahulu'}
                 </span>
                 <ChevronRight className="w-4 h-4" />

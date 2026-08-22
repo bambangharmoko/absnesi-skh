@@ -29,11 +29,13 @@ export interface AttendanceRecord {
   class_name: string;
   category: string;
   date: string;
-  time_in: string;
-  status: 'HADIR' | 'TERLAMBAT' | 'IZIN' | 'SAKIT' | 'ALPHA';
+  time_in: string | null;
+  time_out?: string | null;
+  status: 'HADIR' | 'TERLAMBAT' | 'PULANG' | 'IZIN' | 'SAKIT' | 'ALPHA';
   confidence_score: number;
   verification_method: string;
   captured_photo?: string | null;
+  captured_photo_out?: string | null;
   notes?: string | null;
   created_at: string;
 }
@@ -48,7 +50,6 @@ class DatabaseService {
   }
 
   private initDatabase() {
-    // Check previous storage versions and clean dummy test records
     const previousKeys = ['skh_students_v2', 'skh_students_v1', 'skh_students'];
     let existingList: StudentRecord[] = [];
 
@@ -65,7 +66,6 @@ class DatabaseService {
       }
     }
 
-    // Filter out mock test dummy records
     existingList = existingList.filter(
       s => s.nis !== 'SKH-TEST-001' && s.nis !== 'SKH-2026-TEST-999' && !s.full_name.includes('Test Student') && !s.full_name.includes('Ahmad Fauzi')
     );
@@ -251,7 +251,7 @@ class DatabaseService {
   }
 
   // ==========================================
-  // ATTENDANCES API
+  // ATTENDANCES API (MASUK & PULANG)
   // ==========================================
 
   getAttendances(date?: string, className?: string, status?: string): AttendanceRecord[] {
@@ -283,8 +283,14 @@ class DatabaseService {
       category: string;
     },
     confidence: number,
-    capturedPhoto?: string | null
-  ): Promise<{ status: 'RECORDED_SUCCESS' | 'ALREADY_RECORDED'; message: string; record: AttendanceRecord }> {
+    capturedPhoto?: string | null,
+    mode: 'IN' | 'OUT' | 'AUTO' = 'AUTO'
+  ): Promise<{
+    status: 'RECORDED_SUCCESS' | 'RECORDED_CHECKOUT_SUCCESS' | 'ALREADY_RECORDED';
+    action: 'CHECK_IN' | 'CHECK_OUT' | 'NONE';
+    message: string;
+    record: AttendanceRecord;
+  }> {
     const now = new Date();
     const todayStr = now.toISOString().split('T')[0];
     const timeStr = now.toTimeString().split(' ')[0];
@@ -292,10 +298,78 @@ class DatabaseService {
     const allAttendances = this.getAttendances();
     const existing = allAttendances.find(a => a.student_id === student.id && a.date === todayStr);
 
-    if (existing) {
+    // MODE CHECK-OUT / PULANG
+    if (mode === 'OUT' || (mode === 'AUTO' && existing && existing.time_in && !existing.time_out)) {
+      if (existing) {
+        if (existing.time_out) {
+          return {
+            status: 'ALREADY_RECORDED',
+            action: 'NONE',
+            message: `Halo ${student.nickname}, kamu sudah presensi pulang pada pukul ${existing.time_out}.`,
+            record: existing,
+          };
+        }
+
+        existing.time_out = timeStr;
+        existing.captured_photo_out = capturedPhoto || null;
+        existing.notes = (existing.notes ? existing.notes + ' • ' : '') + `Pulang: ${timeStr}`;
+
+        localStorage.setItem(this.attendancesKey, JSON.stringify(allAttendances));
+
+        if (supabase) {
+          try {
+            await supabase.from('attendances').update({
+              time_out: existing.time_out,
+              notes: existing.notes,
+            }).eq('id', existing.id);
+          } catch (e) {}
+        }
+
+        return {
+          status: 'RECORDED_CHECKOUT_SUCCESS',
+          action: 'CHECK_OUT',
+          message: `Presensi pulang berhasil! Selamat beristirahat dan hati-hati di jalan, ${student.nickname}! 👋`,
+          record: existing,
+        };
+      } else {
+        // Direct Checkout without prior Check-in
+        const newRecord: AttendanceRecord = {
+          id: crypto.randomUUID(),
+          student_id: student.id,
+          student_name: student.full_name,
+          student_nickname: student.nickname,
+          student_nis: student.nis,
+          class_name: student.class_name,
+          category: student.category,
+          date: todayStr,
+          time_in: null,
+          time_out: timeStr,
+          status: 'HADIR',
+          confidence_score: confidence,
+          verification_method: 'FACE_RECOGNITION',
+          captured_photo_out: capturedPhoto || null,
+          notes: `Presensi Langsung Pulang: ${timeStr}`,
+          created_at: now.toISOString(),
+        };
+
+        allAttendances.unshift(newRecord);
+        localStorage.setItem(this.attendancesKey, JSON.stringify(allAttendances));
+
+        return {
+          status: 'RECORDED_CHECKOUT_SUCCESS',
+          action: 'CHECK_OUT',
+          message: `Presensi pulang berhasil! Hati-hati di jalan, ${student.nickname}! 👋`,
+          record: newRecord,
+        };
+      }
+    }
+
+    // MODE CHECK-IN / MASUK
+    if (existing && existing.time_in) {
       return {
         status: 'ALREADY_RECORDED',
-        message: `Halo ${student.nickname}, presensi kamu sudah tercatat hari ini pada pukul ${existing.time_in}.`,
+        action: 'NONE',
+        message: `Halo ${student.nickname}, presensi masuk kamu sudah tercatat hari ini pada pukul ${existing.time_in}.`,
         record: existing,
       };
     }
@@ -315,6 +389,7 @@ class DatabaseService {
       category: student.category,
       date: todayStr,
       time_in: timeStr,
+      time_out: null,
       status: attendanceStatus,
       confidence_score: confidence,
       verification_method: 'FACE_RECOGNITION',
@@ -346,7 +421,8 @@ class DatabaseService {
 
     return {
       status: 'RECORDED_SUCCESS',
-      message: `Presensi berhasil! Selamat datang di sekolah, ${student.nickname}.`,
+      action: 'CHECK_IN',
+      message: `Presensi masuk berhasil! Selamat datang di sekolah, ${student.nickname}! ☀️`,
       record: newRecord,
     };
   }
@@ -357,8 +433,9 @@ class DatabaseService {
     const attendances = this.getAttendances(todayStr);
 
     const totalStudents = students.length;
-    const hadir = attendances.filter(a => a.status === 'HADIR').length;
+    const hadir = attendances.filter(a => a.time_in && a.status === 'HADIR').length;
     const terlambat = attendances.filter(a => a.status === 'TERLAMBAT').length;
+    const pulang = attendances.filter(a => a.time_out !== null && a.time_out !== undefined).length;
     const totalPresent = hadir + terlambat;
     const attendanceRate = totalStudents > 0 ? Math.round((totalPresent / totalStudents) * 100) : 0;
 
@@ -367,6 +444,7 @@ class DatabaseService {
       present_count: totalPresent,
       ontime_count: hadir,
       late_count: terlambat,
+      checkout_count: pulang,
       attendance_rate: attendanceRate,
       date: todayStr,
     };
@@ -377,14 +455,15 @@ class DatabaseService {
     const rows = list.map((a, idx) => ({
       No: idx + 1,
       Tanggal: a.date,
-      Waktu: a.time_in,
+      'Jam Masuk': a.time_in || '-',
+      'Jam Pulang': a.time_out || '-',
       NIS: a.student_nis,
       'Nama Siswa': a.student_name,
       Panggilan: a.student_nickname,
       Kelas: a.class_name,
       Kategori: a.category,
       Status: a.status,
-      'Metode Verifikasi': a.verification_method,
+      'Metode Presensi': a.verification_method,
       Confidence: `${Math.round(a.confidence_score * 100)}%`,
       Catatan: a.notes || '-',
     }));
