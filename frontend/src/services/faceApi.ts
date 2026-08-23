@@ -236,6 +236,24 @@ class FaceApiService {
   }
 
   /**
+   * Cosine Similarity between two 128-d biometric vectors
+   * Range: -1.0 (opposite) to 1.0 (identical match)
+   * Formula: (A · B) / (||A|| * ||B||)
+   */
+  cosineSimilarity(vec1: Float32Array | number[], vec2: Float32Array | number[]): number {
+    let dotProduct = 0;
+    let normA = 0;
+    let normB = 0;
+    for (let i = 0; i < vec1.length; i++) {
+      dotProduct += vec1[i] * vec2[i];
+      normA += vec1[i] * vec1[i];
+      normB += vec2[i] * vec2[i];
+    }
+    if (normA === 0 || normB === 0) return 0;
+    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+  }
+
+  /**
    * Euclidean distance between two 128-d vectors
    */
   euclideanDistance(vec1: Float32Array | number[], vec2: Float32Array | number[]): number {
@@ -246,6 +264,7 @@ class FaceApiService {
     }
     return Math.sqrt(sum);
   }
+
 
   /**
    * Match a detected descriptor against enrolled students
