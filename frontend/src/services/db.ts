@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase, isSupabaseConfigured } from './supabase';
 import * as XLSX from 'xlsx';
 
 export interface StudentRecord {
@@ -118,25 +118,36 @@ class DatabaseService {
   /**
    * Automatically fetch live students & embeddings from Supabase Cloud
    */
-  async syncFromSupabase() {
-    if (!supabase) return;
+  async syncFromSupabase(): Promise<boolean> {
+    if (!isSupabaseConfigured()) {
+      console.warn('[Database] ⚠️ Supabase belum diatur. Gunakan tombol Pengaturan Cloud di navigasi.');
+      return false;
+    }
+
     try {
+      // 1. Fetch cloud students
       const { data: studentsData, error: sErr } = await supabase
         .from('students')
         .select('*, face_embeddings(*)');
 
-      if (!sErr && studentsData) {
+      if (sErr) {
+        console.error('[Database] ❌ Supabase fetch students error:', sErr);
+        return false;
+      }
+
+      if (studentsData) {
         const mapped: StudentRecord[] = studentsData.map(s => ({
           id: s.id,
           nis: s.nis,
           full_name: s.full_name,
           nickname: s.nickname,
           class_name: s.class_name,
-          category: s.category,
-          is_active: s.is_active,
-          created_at: s.created_at,
+          category: s.category || 'Umum',
+          is_active: s.is_active ?? true,
+          created_at: s.created_at || new Date().toISOString(),
           photo_count: s.face_embeddings ? s.face_embeddings.length : 0,
-          latest_photo: s.face_embeddings && s.face_embeddings.length > 0 ? s.face_embeddings[0].photo_path : null,
+          latest_photo:
+            s.face_embeddings && s.face_embeddings.length > 0 ? s.face_embeddings[0].photo_path : null,
           embeddings: (s.face_embeddings || []).map(
             (e: { id: string; pose_label: string; photo_path: string; embedding_vector: string }) => {
               let vec: number[] = [];
@@ -152,13 +163,25 @@ class DatabaseService {
             }
           ),
         }));
-        localStorage.setItem(this.studentsKey, JSON.stringify(mapped));
+
+        // Merge cloud students with local students
+        const localStudents = this.getRawStudents();
+        const mergedMap = new Map<string, StudentRecord>();
+
+        // Cloud takes precedence, but keep local students that haven't pushed yet
+        localStudents.forEach(s => mergedMap.set(s.nis, s));
+        mapped.forEach(s => mergedMap.set(s.nis, s));
+
+        const finalMerged = Array.from(mergedMap.values());
+        localStorage.setItem(this.studentsKey, JSON.stringify(finalMerged));
         this.purgeOrphanAttendances();
-        console.log(`[Database] Synced ${mapped.length} real students from Supabase.`);
+        console.log(`[Database] ✅ Berhasil sinkronisasi ${finalMerged.length} data siswa dengan Supabase Cloud.`);
+        return true;
       }
     } catch (e) {
-      console.warn('[Database] Supabase sync notice:', e);
+      console.warn('[Database] Supabase sync exception:', e);
     }
+    return false;
   }
 
   // ==========================================
@@ -238,10 +261,10 @@ class DatabaseService {
 
     localStorage.setItem(this.studentsKey, JSON.stringify(list));
 
-    // Sync to Supabase Cloud
-    if (supabase) {
+    // Push to Supabase Cloud Database
+    if (isSupabaseConfigured()) {
       try {
-        await supabase.from('students').upsert({
+        const { error: sErr } = await supabase.from('students').upsert({
           id: newStudent.id,
           nis: newStudent.nis,
           full_name: newStudent.full_name,
@@ -251,17 +274,29 @@ class DatabaseService {
           is_active: true,
         });
 
+        if (sErr) {
+          console.error('[Database] ❌ Supabase upsert student error:', sErr);
+        } else {
+          console.log('[Database] ✅ Supabase student saved:', newStudent.full_name);
+        }
+
         if (embeddings.length > 0) {
           const embPayload = embeddings.map(e => ({
             id: e.id,
             student_id: newStudent.id,
             embedding_vector: JSON.stringify(e.vector),
             pose_label: e.pose_label,
+            photo_path: e.photo_data,
           }));
-          await supabase.from('face_embeddings').insert(embPayload);
+          const { error: embErr } = await supabase.from('face_embeddings').insert(embPayload);
+          if (embErr) {
+            console.error('[Database] ❌ Supabase insert embeddings error:', embErr);
+          } else {
+            console.log('[Database] ✅ Supabase embeddings inserted count:', embPayload.length);
+          }
         }
       } catch (err) {
-        console.warn('[Database] Supabase push notice:', err);
+        console.error('[Database] ❌ Supabase push notice:', err);
       }
     }
 
@@ -284,10 +319,12 @@ class DatabaseService {
       } catch (e) {}
     }
 
-    if (supabase) {
+    if (isSupabaseConfigured()) {
       try {
         await supabase.from('attendances').delete().eq('student_id', id);
+        await supabase.from('face_embeddings').delete().eq('student_id', id);
         await supabase.from('students').delete().eq('id', id);
+        console.log('[Database] ✅ Student deleted from Supabase:', id);
       } catch (e) {
         console.warn('[Database] Supabase delete notice:', e);
       }
@@ -329,7 +366,7 @@ class DatabaseService {
     list = list.filter(a => a.id !== id);
     localStorage.setItem(this.attendancesKey, JSON.stringify(list));
 
-    if (supabase) {
+    if (isSupabaseConfigured()) {
       try {
         await supabase.from('attendances').delete().eq('id', id);
       } catch (e) {
@@ -390,7 +427,7 @@ class DatabaseService {
 
       localStorage.setItem(this.attendancesKey, JSON.stringify(allAttendances));
 
-      if (supabase) {
+      if (isSupabaseConfigured()) {
         try {
           await supabase
             .from('attendances')
@@ -448,7 +485,7 @@ class DatabaseService {
     localStorage.setItem(this.attendancesKey, JSON.stringify(allAttendances));
 
     // Sync to Supabase
-    if (supabase) {
+    if (isSupabaseConfigured()) {
       try {
         await supabase.from('attendances').insert({
           id: newRecord.id,
